@@ -1,0 +1,11 @@
+# Mínimos requeridos por el proyecto
+requests>=2.31
+PyYAML>=6.0
+pytest>=8.0
+
+# Opcionales útiles (descomenta si querés reportes/analítica con DataFrames)
+numpy>=1.26
+pandas>=2.2
+
+duckdb>=1.0.0
+pyarrow>=14

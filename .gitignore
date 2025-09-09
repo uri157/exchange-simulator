@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Datos y artefactos locales
+data/files/
+data/duckdb/*.duckdb
+reports/
+*.csv
+*.parquet
+
+# IDE
+.vscode/
+.idea/
+EOF
