@@ -1,69 +1,396 @@
-# Simulador Universal de Exchange y Backtester
+# Exchange Simulator + Backtesting (con DuckDB)
 
-Este repositorio contiene un _skeleton_ de un **simulador universal de exchange** (exchange simulado) y herramientas de **backtesting** y **replay** para estrategias de trading de cripto (futuros USD-M de Binance). Ha sido diseñado para ser compatible por interfaz con bots existentes (por ejemplo, estrategias de momentum y basis), de forma que se pueda _enchufar_ un `SimExchange` en lugar del exchange real sin cambiar la lógica de la estrategia.
+> Un “mini-exchange” local para **backtestear** estrategias de futuros usando velas históricas (desde CSV o API) y persistiendo todo en **DuckDB**.
+> Incluye: cargador de datos, runner de backtests, almacenamiento de resultados (trades + equity), builder de features (EMA/RSI, etc.) y un **gateway** que emula endpoints de exchange para conectar bots.
 
-## Instalación
+---
 
-Requiere Python 3.11+. Crear un entorno virtual si se desea, luego instalar dependencias básicas:
+## TL;DR (rápido para correr)
+
 ```bash
-pip install -r requirements.txt
-Las dependencias se mantienen al mínimo (principalmente requests para llamadas a la API de Binance).
-Estructura del Proyecto
-sim/
-  exchange_sim.py       # Implementación del exchange simulado (SimExchange)
-  fill_models.py        # Modelos de fill/ejecución de órdenes (OHLC, aleatorio, etc.)
-  models.py             # Definición de entidades: Order, Fill, Position, etc.
-  adapters/
-    binance_like.py     # Adapter para interfaz estilo Binance (UMFutures)
-data/
-  binance_api.py        # Cargador de datos vía API de Binance (klines, funding rates)
-  binance_files.py      # Cargador de datos desde archivos históricos (data.binance.vision)
-backtests/
-  bt_runner.py          # Runner de backtesting batch (ejecuta un backtest completo)
-replay/
-  replayer.py           # Replay de mercado en "tiempo real" acelerado
-reports/                # Carpeta donde se guardan resultados (CSV, JSON)
-tests/                  # Tests básicos unitarios
-config/
-  default.yaml          # Configuración por defecto (ej. fees, paths) - opcional
-cli.py                  # CLI unificado (opcional, se puede usar -m backtests.bt_runner)
-README.md
-Uso: Backtest
-Para ejecutar un backtest de ejemplo utilizando datos históricos de la API de Binance, utilizar el módulo backtests.bt_runner. Por ejemplo:
-python -m backtests.bt_runner --symbol BTCUSDT --interval 1h \
-    --start 2024-01-01 --end 2024-06-30 \
-    --data-source api --fill-model ohlc_up --maker-bps 2 --taker-bps 4 --slippage-bps 1 --seed 42
-Este comando descargará datos de velas 1h para BTCUSDT desde la API (del 1 de enero al 30 de junio de 2024) y ejecutará un backtest: - --data-source api: usa la API pública de Binance para obtener datos (data/binance_api.py). Alternativamente, se puede usar --data-source files para leer de archivos locales (ver sección siguiente). - --fill-model ohlc_up: modelo de ejecución determinista asumiendo que en cada vela el precio va primero al High y luego al Low. Otras opciones: ohlc_down (Low primero), random (aleatoriza orden H/L con semilla), book (simulación usando spread bid/ask simple). - --maker-bps 2 --taker-bps 4: fees de maker 0.02% y taker 0.04% (en basis points). Estas comisiones se aplicarán a cada fill según corresponda. - --slippage-bps 1: slippage de 0.01% aplicado a precios de ejecución (p. ej. en órdenes de mercado). - --seed 42: semilla RNG para el modelo aleatorio (si se usa random).
-Al terminar, el backtester generará archivos en la carpeta reports/: - trades.csv: lista de trades ejecutados (timestamp, side, price, qty, PnL realizado, fee, etc.). - equity.csv: curva de equity a lo largo del tiempo (timestamp, equity). - summary.json: resumen de métricas de desempeño (número de trades, winrate, profit factor, Sharpe, Sortino, drawdown máximo, retornos promedio, etc.). Además, se muestra un resumen por consola con los valores principales.
-Uso: Data Files locales
-Para usar datos históricos descargados en lugar de la API, pasar --data-source files al correr el backtest. Por ejemplo:
-python -m backtests.bt_runner --symbol BTCUSDT --interval 1h \
-    --start 2023-01-01 --end 2023-03-31 --data-source files
-Asegúrese de descargar los archivos de velas correspondientes desde data.binance.vision. Por ejemplo, para BTCUSDT 1h: - BTCUSDT-1h-2023-01.zip, BTCUSDT-1h-2023-02.zip, etc. (contienen datos de velas 1h por mes). Coloque estos archivos en el directorio ./data/binance (por defecto) o especifique la variable de entorno BINANCE_DATA_DIR apuntando al directorio que contiene los archivos. El cargador BinanceFileData leerá automáticamente los CSV/ZIP necesarios para cubrir el rango de fechas solicitado. Igualmente, se pueden descargar archivos de funding rates (e.g. BTCUSDT-funding-2023-01.zip) para incluir eventos de funding.
-Uso: Replay en tiempo acelerado
-El módulo replay/replayer.py permite reproducir la serie histórica en "tiempo real" acelerado, para probar un bot de forma end-to-end. Ejemplo:
-python -m replay.replayer --symbol BTCUSDT --interval 15m \
-    --start 2024-01-01 --end 2024-01-07 --speed 60
-Esto cargará velas de 15 minutos de la primera semana de 2024 y las emitirá en consola en tiempo acelerado (60x más rápido que el tiempo real, es decir cada vela de 15m se imprime cada 15s). Puede conectar su estrategia para que consuma estos eventos (por ejemplo instanciándola con el mismo SimExchange y recibiendo ticks). En esta implementación de ejemplo, simplemente se imprime la hora y precio de cierre de cada vela junto con la equity de la cuenta simulada.
-Adaptador de Interfaz (Binance-like)
-El archivo sim/adapters/binance_like.py contiene un adapter BinanceLikeExchange que envuelve un SimExchange y expone métodos con la misma firma y formato de respuesta que la API de Binance Futures. Esto incluye métodos como new_order, cancel_order, get_open_orders, position_risk, account_info, etc., devolviendo diccionarios con campos equivalentes (por ejemplo, status, orderId, clientOrderId, etc.). Si su bot espera interactuar con un cliente Binance (por ejemplo UMFutures), puede utilizar este adapter para traducir entre la simulación y la interfaz esperada, sin modificar la lógica del bot.
-Arquitectura (Mermaid)
-flowchart LR
-    DataSource -->|velas & funding| Backtester
-    Backtester -->|nueva vela| Estrategia/Bot
-    Estrategia/Bot -->|órdenes (API Exchange)| ExchangeSimulado
-    ExchangeSimulado -->|fills & PnL| Backtester
-    Backtester -->|métricas| Reportes
-En el flujo de arriba: - El DataSource (API de Binance o archivos locales) provee los datos históricos de mercado (velas y tasas de funding) al Backtester. - El Backtester itera sobre las velas y, por cada nueva vela, notifica a la Estrategia (por ejemplo llamando su método on_new_candle). La estrategia, utilizando el Exchange Simulado, envía órdenes (por ejemplo, new_order, cancel_order, etc.). - El SimExchange procesa las órdenes según el modelo de fill seleccionado, simulando ejecuciones, aplicando fees y funding, y actualizando las posiciones y PnL. Los resultados de fills (trades ejecutados) y cambios en la posición se reportan de vuelta al Backtester. - El Backtester registra los trades, la equity de la cuenta a través del tiempo y calcula métricas de rendimiento, que luego vuelca en los reportes (CSV/JSON) al finalizar.
-Notas y Ampliaciones
-Modelos de Fill: Se incluyen modelos de ejecución determinísticos basados en el camino OHLC (tanto up-first como down-first), un modelo aleatorio reproducible (RandomOHLC con semilla configurable) y un modelo simplificado basado en book ticker (considerando un spread fijo). Existe la estructura para implementar modelos más sofisticados (por ejemplo usando libro de órdenes L2), dejando # TODO donde correspondería integrar lógica más detallada.
-Modo Hedge: Por defecto el simulador maneja posición en modo one-way (posición neta por símbolo). Se incluyó un flag hedge_mode en SimExchange y métodos set_position_mode, pero la simulación actualmente trata la posición de forma neta. Sería posible expandir la lógica para mantener dos posiciones (LONG/SHORT) simultáneamente si se quisiera soportar completamente el modo hedge.
-Parciales y latencia: El simulador actualmente llena las órdenes en su totalidad cuando se cumplen las condiciones en una vela. Para simplificar, no se simula partial fills en múltiples velas ni retrasos por latencia; sin embargo, el diseño (especialmente en fill_models.py) deja espacio para introducir proporciones de fill parciales o ejecuciones distribuidas en el tiempo.
-Métricas: El resumen calcula win rate, profit factor, Sharpe, Sortino, drawdown, y retornos medios semanales/mensuales. Estos cálculos suponen un seguimiento diario de equity (Sharpe/Sortino anualizados con 365 días). En caso de periodos muy cortos o ausencia de trades, algunas métricas pueden resultar no aplicables (null o "inf" en el JSON).
-Pruebas unitarias: En la carpeta tests/ se incluyen pruebas básicas (pytest) para verificar, por ejemplo, que los modelos de fill producen los resultados esperados en escenarios simples (llenado de órdenes limit, stop en distintas trayectorias de precio) y que el cálculo de PnL y lógica reduceOnly funcionan correctamente.
-Conclusión
-Este esqueleto proporciona los componentes fundamentales para simular un exchange y ejecutar backtests reproducibles de estrategias de trading. Se espera que pueda integrarse con estrategias existentes con mínimos cambios, proporcionando así una plataforma para experimentar y validar algoritmos de trading de manera segura y rápida.
-file: requirements.txt
-```text
-requests
+# 1) Crear venv e instalar deps
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip setuptools wheel
+python -m pip install -r requirements.txt
 
+# 2) Inicializar DB (crea esquema)
+python -m scripts.init_duckdb
+
+# 3) Cargar datos (ej: 1h desde archivos locales o API)
+#    - desde archivos:  --source files
+#    - desde API:       --source api
+python -m scripts.load_to_duckdb --db data/duckdb/exsim.duckdb \
+  --source files --symbol BTCUSDT --interval 1h \
+  --start 2024-07-01 --end 2024-07-05
+
+# 4) Correr un backtest (lee de DuckDB)
+python -m backtests.bt_runner \
+  --symbol BTCUSDT --interval 1h \
+  --start 2024-07-01 --end 2024-07-05 \
+  --data-source duckdb --duckdb-path data/duckdb/exsim.duckdb \
+  --fill-model ohlc_up \
+  --strategy backtests.strategies.sma:SMA \
+  --strategy-params '{"fast":5,"slow":20,"qty":0.002}'
+
+# 5) (Opcional) Features técnicas
+python -m scripts.make_features \
+  --duckdb-path data/duckdb/exsim.duckdb \
+  --symbols BTCUSDT --interval 1h \
+  --start 2024-07-01 --end 2024-07-05 \
+  --ema 5,20,50 --rsi 14 \
+  --align close \
+  --set-id demo_1h_ema_rsi --replace
+
+# 6) Consultar resultados en SQL
+python - <<'PY'
+import duckdb
+con = duckdb.connect("data/duckdb/exsim.duckdb")
+print(con.sql("SELECT run_id, strategy, created_at FROM runs ORDER BY created_at DESC LIMIT 5").df())
+PY
+```
+
+---
+
+## ¿Qué problema resuelve?
+
+* Poder **iterar rápido** estrategias sin depender de un exchange real ni demoras de mercado.
+* Guardar **todo el histórico** (OHLC + funding) en un formato eficiente (DuckDB).
+* Ejecutar backtests reproducibles, versionar estrategias y **persistir runs** (trades + equity).
+* Construir **features** (EMAs, RSI, etc.) para análisis y filtros post-trade.
+* (Gateway) Emular un exchange para que los **bots reales** se conecten “como si” fuera Binance, pero leyendo del histórico local.
+
+---
+
+## Arquitectura (carpetas clave)
+
+```
+.
+├── backtests/
+│   ├── bt_runner.py          # Runner de backtests (CLI)
+│   ├── strategy_api.py       # Contrato de estrategia (hooks)
+│   └── strategies/
+│       └── sma.py            # Ejemplo: cruce de medias
+├── data/
+│   ├── duckdb/               # DB file (exsim.duckdb)
+│   ├── binance_api.py        # Pull directo desde API
+│   ├── binance_files.py      # Loader desde CSVs locales
+│   └── duckdb_source.py      # Loader desde DuckDB (lectura)
+├── gateway/
+│   └── sim_gateway.py        # Gateway REST/WS que emula exchange (subset)
+├── scripts/
+│   ├── init_duckdb.py        # Crea esquema DuckDB
+│   ├── load_to_duckdb.py     # Carga OHLC/Funding (API o files) → DB
+│   ├── make_features.py      # Calcula EMAs/RSI y las guarda en DB
+│   └── analyze_trades.py     # Ejemplos de análisis con SQL/joins
+├── sim/
+│   ├── exchange_sim.py       # Motor de fills y posiciones
+│   ├── fill_models.py        # Modelos de ejecución (OHLC, random, book)
+│   └── models.py             # Bar/Order/Position/Trade models
+└── replay/
+    └── replayer.py           # Utilidades para “reproducir” series
+```
+
+---
+
+## Dependencias
+
+* Python 3.12+
+* `duckdb`, `pandas`, `pyarrow`, `numpy`, `requests`, `PyYAML`, `pytest`
+  (Se instalan con `pip -r requirements.txt`)
+
+---
+
+## Datos: fuentes y formatos
+
+### Fuentes disponibles
+
+* `api`: descarga candles y funding desde endpoints tipo Binance.
+* `files`: lee CSVs locales (por si ya descargaste datos antes).
+* `duckdb`: lectura directa desde `data/duckdb/exsim.duckdb`.
+
+### Transformación a formato “Binance-like”
+
+Los loaders exponen:
+
+* `get_klines(symbol, interval, startTime, endTime)` →
+  `[openTime, open, high, low, close, volume, closeTime]`
+
+* `get_funding_rates(symbol, startTime, endTime)` →
+  `[{"fundingTime": ..., "fundingRate": ...}, ...]`
+
+Así el **runner** y los **fill models** no dependen de la fuente.
+
+---
+
+## Esquema de DuckDB
+
+Se crea con `scripts.init_duckdb`. Tablas principales:
+
+* **ohlc**: barras multi-TF (usada para 1h en los ejemplos)
+  `symbol VARCHAR, ts BIGINT (open), open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, volume DOUBLE, close_ts BIGINT`
+
+* **ohlc\_1m**: barras 1m (si usás espejo/minuto)
+  mismas columnas que `ohlc`.
+
+* **funding**:
+  `symbol VARCHAR, funding_time BIGINT, funding_rate DOUBLE`
+
+* **runs** (metadata del backtest):
+  `run_id UUID, created_at TIMESTAMP, strategy VARCHAR, params_json JSON, feature_set_id VARCHAR, code_hash VARCHAR`
+
+* **trades\_fills** (todas las ejecuciones):
+  `run_id UUID, seq BIGINT, ts BIGINT, symbol VARCHAR, side VARCHAR, price DOUBLE, qty DOUBLE, realized_pnl DOUBLE, fee DOUBLE, is_maker BOOLEAN`
+
+* **equity\_curve**:
+  `run_id UUID, ts BIGINT, equity DOUBLE`
+
+* **feature\_sets**:
+  `set_id VARCHAR, created_at TIMESTAMP, base_tf VARCHAR, params_json JSON`
+
+* **features\_<tf>** (p.ej. `features_1h`, `features_1m`):
+  `set_id VARCHAR, symbol VARCHAR, ts BIGINT, data JSON`
+  (en `data` guardamos EMAs/RSI, etc. Acceso vía `json_extract`).
+
+> Nota: si tu proceso crea `features_1h` y la tabla no existe, el script la crea “on demand”.
+
+---
+
+## Backtests
+
+### Runner (CLI)
+
+```
+python -m backtests.bt_runner \
+  --symbol BTCUSDT --interval 1h \
+  --start 2024-07-01 --end 2024-07-05 \
+  --data-source duckdb --duckdb-path data/duckdb/exsim.duckdb \
+  --fill-model ohlc_up \
+  --strategy backtests.strategies.sma:SMA \
+  --strategy-params '{"fast":5,"slow":20,"qty":0.002}'
+```
+
+**Parámetros clave**
+
+* `--data-source`: `api | files | duckdb`
+* `--duckdb-path`: path a la DB (si usás `duckdb`)
+* `--fill-model`: `ohlc_up | ohlc_down | random | book`
+* `--strategy`: ruta dinámica `"modulo.submodulo:Clase"`
+* `--strategy-params`: JSON (cantidad, ventanas, etc.)
+* Fees/Slippage: `--maker-bps`, `--taker-bps`, `--slippage-bps`
+* Repro: `--seed`
+
+**Outputs**
+
+* `reports/trades.csv`
+* `reports/equity.csv`
+* `reports/summary.json`
+* Además, el runner **guarda automáticamente** la run en DuckDB (`runs`, `trades_fills`, `equity_curve`) y te imprime el `Run ID`.
+
+### Estrategias (plugin)
+
+Contrato (ver `backtests/strategy_api.py`):
+
+* `on_start(self)`
+* `on_bar(self, bar: Bar)`  ← hook principal por vela
+* `on_finish(self)`
+
+Ejemplo incluido: `backtests.strategies.sma:SMA`.
+Modelo de barra en `sim/models.py` (`Bar.open, high, low, close, volume, open_time, close_time`).
+
+### Fill models
+
+En `sim/fill_models.py`:
+
+* `OHLCPathFill(up_first=True/False, slippage_bps=...)`
+  Simula recorrido intra-bar determinista.
+* `RandomOHLC(seed, slippage_bps)`
+* `BookTickerFill()` (stub para book-based; opcional usar data\_source).
+
+---
+
+## Carga de datos (scripts)
+
+* **Init DB**
+
+  ```
+  python -m scripts.init_duckdb
+  ```
+
+* **Cargar OHLC/Funding → DB**
+
+  ```
+  python -m scripts.load_to_duckdb --db data/duckdb/exsim.duckdb \
+    --source api|files --symbol BTCUSDT --interval 1h \
+    --start 2024-07-01 --end 2024-07-05
+  ```
+
+* **Backfill mensual 1m (bash)**
+
+  ```bash
+  DB=data/duckdb/exsim.duckdb
+  SYM=BTCUSDT
+  TF=1m
+  mkdir -p logs
+
+  for Y in {2018..2025}; do
+    for M in $(seq -w 1 12); do
+      START="${Y}-${M}-01"
+      if [ "$(date -d "$START" +%s)" -gt "$(date +%s)" ]; then break 2; fi
+      END=$(date -d "$START +1 month -1 day" +%F)
+      echo "[$(date -u +%FT%TZ)] Cargando ${SYM} ${TF} ${START} -> ${END}"
+      python -m scripts.load_to_duckdb \
+        --db "$DB" --source api \
+        --symbol "$SYM" --interval "$TF" \
+        --start "$START" --end "$END" \
+        | tee -a "logs/backfill_${SYM}_${TF}.log"
+    done
+  done
+  ```
+
+* **Features técnicas**
+
+  ```
+  python -m scripts.make_features \
+    --duckdb-path data/duckdb/exsim.duckdb \
+    --symbols BTCUSDT --interval 1h \
+    --start 2024-07-01 --end 2024-07-05 \
+    --ema 5,20,50 --rsi 14 --align close \
+    --set-id demo_1h_ema_rsi --replace
+  ```
+
+* **Análisis de fills (ejemplos)**
+
+  ```
+  python -m scripts.analyze_trades --help
+  ```
+
+---
+
+## Gateway (emulación de exchange)
+
+Módulo: `gateway/sim_gateway.py`
+Objetivo: exponer una **interfaz REST/WS compatible (subset)** para que bots externos se conecten como si fuera un exchange y consuman histórico/stream generado desde DuckDB.
+
+Uso típico:
+
+```bash
+python -m gateway.sim_gateway --help
+python -m gateway.sim_gateway --duckdb-path data/duckdb/exsim.duckdb \
+  --symbol BTCUSDT --interval 1m --speed 2x
+```
+
+> Nota: los endpoints/streams disponibles pueden consultarse con `-h`. La idea es entregar **klines/bookTicker** en “replay” con control de velocidad y cortes por rango.
+
+---
+
+## Consultas útiles (SQL)
+
+```python
+import duckdb
+con = duckdb.connect("data/duckdb/exsim.duckdb")
+
+# Últimos runs
+con.sql("SELECT run_id, strategy, created_at FROM runs ORDER BY created_at DESC LIMIT 5").df()
+
+# Resumen de fills/fees de un run
+RUN = "<tu-run-id>"
+con.sql(f"""
+  SELECT COUNT(*) AS fills,
+         SUM(fee) AS total_fees,
+         SUM(realized_pnl) AS realized_pnl
+  FROM trades_fills
+  WHERE run_id = '{RUN}'
+""").df()
+
+# Última equity del run
+con.sql(f"""
+  SELECT equity FROM equity_curve
+  WHERE run_id = '{RUN}'
+  ORDER BY ts DESC LIMIT 1
+""").df()
+
+# Join con features (ej: EMA/RSI en features_1h)
+SET='demo_1h_ema_rsi'
+con.sql(f"""
+WITH j AS (
+  SELECT f.ts, f.realized_pnl,
+         json_extract(e.data, '$.ema_5')  AS ema_5,
+         json_extract(e.data, '$.ema_20') AS ema_20,
+         json_extract(e.data, '$.rsi_14') AS rsi_14
+  FROM trades_fills f
+  JOIN features_1h e
+    ON e.ts = f.ts AND e.symbol = f.symbol AND e.set_id = '{SET}'
+  WHERE f.run_id = '{RUN}'
+)
+SELECT (ema_5 > ema_20) AS ema5_gt_ema20,
+       COUNT(*) AS fills,
+       SUM(realized_pnl) AS sum_realized,
+       AVG(realized_pnl) AS avg_realized,
+       AVG(rsi_14) AS avg_rsi
+FROM j
+GROUP BY 1
+ORDER BY 1 DESC
+""").df()
+```
+
+---
+
+## Buenas prácticas / Git
+
+* **No commitear** el entorno `.venv/` ni la base `exsim.duckdb` (pueden ser grandes).
+  Asegurate que `.gitignore` incluya:
+
+  ```
+  .venv/
+  data/duckdb/*.duckdb
+  logs/
+  __pycache__/
+  *.pyc
+  ```
+* Si “metiste la pata” y agregaste `.venv/` al repo:
+
+  ```bash
+  git rm -r --cached .venv
+  git commit -m "remove venv from git history (cached)"
+  ```
+
+  (Si hace falta limpiar historia completa, usar `git filter-repo`/`filter-branch` fuera del alcance de este README.)
+
+---
+
+## Troubleshooting
+
+* **PEP 668 / “externally-managed-environment”**
+  Usá venv: `python3 -m venv .venv && source .venv/bin/activate`.
+
+* **DuckDB “read\_only”**
+  Si ves `Connection Error: ... different configuration` o no puede escribir:
+  cerrá conexiones previas y reabrí sin `read_only=True`.
+
+* **`python` vs `python3`**
+  Dentro del venv, el binario se llama `python`. Fuera, puede ser `python3`.
+
+* **Rate limits de API**
+  El backfill mensual ya respeta ventanas; si Binance corta, relanzá el mes afectado: el `INSERT ... ON CONFLICT` (o equivalente) evita duplicados.
+
+---
+
+## Roadmap (breve)
+
+* Gateway Binance-compatible (más endpoints, órdenes simuladas, posiciones).
+* Más fill models (slippage dinámico, impacto por volumen).
+* Librería de indicadores ampliada (BB, ATR, MACD, etc.).
+* Explorador de runs/estrategias en UI ligera.
+
+---
+
+## Licencia
+
+(Define la que prefieras para el repo.)
+
+---
+
+## Créditos
+
+Hecho para iterar estrategias de forma rápida, reproducible y “offline-friendly” ✨. Si necesitás ampliar el gateway o agregar nuevos indicadores, ya está todo preparado para enchufar módulos sin romper el resto.

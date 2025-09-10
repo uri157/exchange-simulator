@@ -1,0 +1,372 @@
+[INFO] Leyendo BTCUSDT 1m 2018-01-01 -> 2018-01-31 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2018-02-01 -> 2018-02-28 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2018-03-01 -> 2018-03-31 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2018-04-01 -> 2018-04-30 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2018-05-01 -> 2018-05-31 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2018-06-01 -> 2018-06-30 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2018-07-01 -> 2018-07-31 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2018-08-01 -> 2018-08-31 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2018-09-01 -> 2018-09-30 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2018-10-01 -> 2018-10-31 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2018-11-01 -> 2018-11-30 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2018-12-01 -> 2018-12-31 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2019-01-01 -> 2019-01-31 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2019-02-01 -> 2019-02-28 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2019-03-01 -> 2019-03-31 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2019-04-01 -> 2019-04-30 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2019-05-01 -> 2019-05-31 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2019-06-01 -> 2019-06-30 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2019-07-01 -> 2019-07-31 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2019-08-01 -> 2019-08-31 desde api...
+[INFO] kline rows: 0, funding rows: 0
+[OK] Insertados OHLC: 0, Funding: 0
+[CHECK] ohlc rows ahora: 0
+[INFO] Leyendo BTCUSDT 1m 2019-09-01 -> 2019-09-30 desde api...
+[INFO] kline rows: 30603, funding rows: 60
+[OK] Insertados OHLC: 30603, Funding: 60
+[CHECK] ohlc rows ahora: 30603
+[INFO] Leyendo BTCUSDT 1m 2019-10-01 -> 2019-10-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2019-11-01 -> 2019-11-30 desde api...
+[INFO] kline rows: 41761, funding rows: 88
+[OK] Insertados OHLC: 41761, Funding: 88
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2019-12-01 -> 2019-12-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2020-01-01 -> 2020-01-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2020-02-01 -> 2020-02-29 desde api...
+[INFO] kline rows: 40321, funding rows: 85
+[OK] Insertados OHLC: 40321, Funding: 85
+[CHECK] ohlc rows ahora: 40321
+[INFO] Leyendo BTCUSDT 1m 2020-03-01 -> 2020-03-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2020-04-01 -> 2020-04-30 desde api...
+[INFO] kline rows: 41761, funding rows: 88
+[OK] Insertados OHLC: 41761, Funding: 88
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2020-05-01 -> 2020-05-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2020-06-01 -> 2020-06-30 desde api...
+[INFO] kline rows: 41761, funding rows: 88
+[OK] Insertados OHLC: 41761, Funding: 88
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2020-07-01 -> 2020-07-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2020-08-01 -> 2020-08-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2020-09-01 -> 2020-09-30 desde api...
+[INFO] kline rows: 41761, funding rows: 87
+[OK] Insertados OHLC: 41761, Funding: 87
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2020-10-01 -> 2020-10-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2020-11-01 -> 2020-11-30 desde api...
+[INFO] kline rows: 41761, funding rows: 87
+[OK] Insertados OHLC: 41761, Funding: 87
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2020-12-01 -> 2020-12-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2021-01-01 -> 2021-01-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2021-02-01 -> 2021-02-28 desde api...
+[INFO] kline rows: 38881, funding rows: 81
+[OK] Insertados OHLC: 38881, Funding: 81
+[CHECK] ohlc rows ahora: 38881
+[INFO] Leyendo BTCUSDT 1m 2021-03-01 -> 2021-03-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2021-04-01 -> 2021-04-30 desde api...
+[INFO] kline rows: 41761, funding rows: 87
+[OK] Insertados OHLC: 41761, Funding: 87
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2021-05-01 -> 2021-05-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2021-06-01 -> 2021-06-30 desde api...
+[INFO] kline rows: 41761, funding rows: 87
+[OK] Insertados OHLC: 41761, Funding: 87
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2021-07-01 -> 2021-07-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2021-08-01 -> 2021-08-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2021-09-01 -> 2021-09-30 desde api...
+[INFO] kline rows: 41761, funding rows: 88
+[OK] Insertados OHLC: 41761, Funding: 88
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2021-10-01 -> 2021-10-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2021-11-01 -> 2021-11-30 desde api...
+[INFO] kline rows: 41761, funding rows: 88
+[OK] Insertados OHLC: 41761, Funding: 88
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2021-12-01 -> 2021-12-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2022-01-01 -> 2022-01-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2022-02-01 -> 2022-02-28 desde api...
+[INFO] kline rows: 38881, funding rows: 82
+[OK] Insertados OHLC: 38881, Funding: 82
+[CHECK] ohlc rows ahora: 38881
+[INFO] Leyendo BTCUSDT 1m 2022-03-01 -> 2022-03-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2022-04-01 -> 2022-04-30 desde api...
+[INFO] kline rows: 41761, funding rows: 88
+[OK] Insertados OHLC: 41761, Funding: 88
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2022-05-01 -> 2022-05-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2022-06-01 -> 2022-06-30 desde api...
+[INFO] kline rows: 41761, funding rows: 88
+[OK] Insertados OHLC: 41761, Funding: 88
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2022-07-01 -> 2022-07-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2022-08-01 -> 2022-08-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2022-09-01 -> 2022-09-30 desde api...
+[INFO] kline rows: 41761, funding rows: 87
+[OK] Insertados OHLC: 41761, Funding: 87
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2022-10-01 -> 2022-10-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2022-11-01 -> 2022-11-30 desde api...
+[INFO] kline rows: 41761, funding rows: 87
+[OK] Insertados OHLC: 41761, Funding: 87
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2022-12-01 -> 2022-12-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2023-01-01 -> 2023-01-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2023-02-01 -> 2023-02-28 desde api...
+[INFO] kline rows: 38881, funding rows: 81
+[OK] Insertados OHLC: 38881, Funding: 81
+[CHECK] ohlc rows ahora: 38881
+[INFO] Leyendo BTCUSDT 1m 2023-03-01 -> 2023-03-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2023-04-01 -> 2023-04-30 desde api...
+[INFO] kline rows: 41761, funding rows: 87
+[OK] Insertados OHLC: 41761, Funding: 87
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2023-05-01 -> 2023-05-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2023-06-01 -> 2023-06-30 desde api...
+[INFO] kline rows: 41761, funding rows: 88
+[OK] Insertados OHLC: 41761, Funding: 88
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2023-07-01 -> 2023-07-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2023-08-01 -> 2023-08-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2023-09-01 -> 2023-09-30 desde api...
+[INFO] kline rows: 41761, funding rows: 88
+[OK] Insertados OHLC: 41761, Funding: 88
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2023-10-01 -> 2023-10-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2023-11-01 -> 2023-11-30 desde api...
+[INFO] kline rows: 41761, funding rows: 88
+[OK] Insertados OHLC: 41761, Funding: 88
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2023-12-01 -> 2023-12-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2024-01-01 -> 2024-01-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2024-02-01 -> 2024-02-29 desde api...
+[INFO] kline rows: 40321, funding rows: 85
+[OK] Insertados OHLC: 40321, Funding: 85
+[CHECK] ohlc rows ahora: 40321
+[INFO] Leyendo BTCUSDT 1m 2024-03-01 -> 2024-03-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2024-04-01 -> 2024-04-30 desde api...
+[INFO] kline rows: 41761, funding rows: 88
+[OK] Insertados OHLC: 41761, Funding: 88
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2024-05-01 -> 2024-05-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2024-06-01 -> 2024-06-30 desde api...
+[INFO] kline rows: 41761, funding rows: 88
+[OK] Insertados OHLC: 41761, Funding: 88
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2024-07-01 -> 2024-07-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2024-08-01 -> 2024-08-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2024-09-01 -> 2024-09-30 desde api...
+[INFO] kline rows: 41761, funding rows: 88
+[OK] Insertados OHLC: 41761, Funding: 88
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2024-10-01 -> 2024-10-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2024-11-01 -> 2024-11-30 desde api...
+[INFO] kline rows: 41761, funding rows: 88
+[OK] Insertados OHLC: 41761, Funding: 88
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2024-12-01 -> 2024-12-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2025-01-01 -> 2025-01-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2025-02-01 -> 2025-02-28 desde api...
+[INFO] kline rows: 38881, funding rows: 81
+[OK] Insertados OHLC: 38881, Funding: 81
+[CHECK] ohlc rows ahora: 38881
+[INFO] Leyendo BTCUSDT 1m 2025-03-01 -> 2025-03-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2025-04-01 -> 2025-04-30 desde api...
+[INFO] kline rows: 41761, funding rows: 87
+[OK] Insertados OHLC: 41761, Funding: 87
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2025-05-01 -> 2025-05-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2025-06-01 -> 2025-06-30 desde api...
+[INFO] kline rows: 41761, funding rows: 88
+[OK] Insertados OHLC: 41761, Funding: 88
+[CHECK] ohlc rows ahora: 41761
+[INFO] Leyendo BTCUSDT 1m 2025-07-01 -> 2025-07-31 desde api...
+[INFO] kline rows: 43201, funding rows: 91
+[OK] Insertados OHLC: 43201, Funding: 91
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2025-08-01 -> 2025-08-31 desde api...
+[INFO] kline rows: 43201, funding rows: 90
+[OK] Insertados OHLC: 43201, Funding: 90
+[CHECK] ohlc rows ahora: 43201
+[INFO] Leyendo BTCUSDT 1m 2025-09-01 -> 2025-09-30 desde api...
+[INFO] kline rows: 13253, funding rows: 28
+[OK] Insertados OHLC: 13253, Funding: 28
+[CHECK] ohlc rows ahora: 13253

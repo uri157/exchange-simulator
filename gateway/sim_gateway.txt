@@ -1,0 +1,620 @@
+# gateway/sim_gateway.py
+from __future__ import annotations
+import argparse, asyncio, json, math, os, time, uuid
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple, Any, Set
+
+import duckdb
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Body
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+import uvicorn
+
+# ---------- Utilidades tiempo ----------
+def now_ms() -> int:
+    return int(time.time() * 1000)
+
+def parse_interval_str(i: str) -> str:
+    i = i.lower()
+    # aceptamos 1m, 3m, 5m, 15m, 30m, 1h, 4h, 1d
+    return i
+
+def table_for_interval(i: str) -> str:
+    i = parse_interval_str(i)
+    if i in ("1m", "1", "1min"):
+        return "ohlc_1m"
+    return "ohlc"  # para 1h/4h/1d según tu carga
+
+# ---------- Modelos entrada/estado ----------
+@dataclass
+class ReplayConfig:
+    db_path: str
+    symbol: str
+    interval: str
+    start_ts: int
+    end_ts: int
+    speed_bars_per_sec: float = 10.0  # 10 velas/seg (rápido para backtest de bots)
+    maker_bps: float = 2.0
+    taker_bps: float = 4.0
+    slippage_bps: float = 0.0
+    starting_balance: float = 100_000.0
+
+@dataclass
+class Order:
+    order_id: int
+    client_order_id: str
+    symbol: str
+    side: str  # BUY | SELL
+    type: str  # MARKET | LIMIT
+    qty: float
+    price: Optional[float] = None
+    tif: str = "GTC"
+    ts: int = field(default_factory=now_ms)
+    status: str = "NEW"     # NEW | FILLED | PARTIALLY_FILLED | CANCELED
+    executed_qty: float = 0.0
+    is_maker: Optional[bool] = None   # set cuando se llena (LIMIT)
+    fills: List[Dict[str, Any]] = field(default_factory=list)
+
+@dataclass
+class Position:
+    qty: float = 0.0
+    avg_price: float = 0.0  # precio promedio de la posición (base asset)
+
+@dataclass
+class Account:
+    cash: float
+    position: Position = field(default_factory=Position)
+
+    def mark_to_market(self, px: float) -> float:
+        return self.cash + self.position.qty * px
+
+    def unrealized_pnl(self, px: float) -> float:
+        if self.position.qty == 0:
+            return 0.0
+        return (px - self.position.avg_price) * self.position.qty
+
+class RunStore:
+    """Persistencia en DuckDB con el mismo esquema que ya estás usando."""
+    def __init__(self, con: duckdb.DuckDBPyConnection):
+        self.con = con
+        self.seq = 0
+        self.run_id: Optional[str] = None
+
+    def new_run(self, strategy: str, params: Dict[str, Any]) -> str:
+        run_id = str(uuid.uuid4())
+        self.run_id = run_id
+        self.seq = 0
+        self.con.sql("""
+            INSERT INTO runs (run_id, strategy, params_json, feature_set_id, code_hash)
+            VALUES (?, ?, ?, NULL, NULL)
+        """, [run_id, strategy, json.dumps(params)])
+        return run_id
+
+    def log_fill(self, ts: int, symbol: str, side: str, price: float, qty: float,
+                 realized: float, fee: float, is_maker: bool):
+        if not self.run_id:
+            return
+        self.seq += 1
+        self.con.sql("""
+            INSERT INTO trades_fills
+              (run_id, seq, ts, symbol, side, price, qty, realized_pnl, fee, is_maker)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, [self.run_id, self.seq, ts, symbol, side, price, qty, realized, fee, is_maker])
+
+    def log_equity(self, ts: int, equity: float):
+        if not self.run_id:
+            return
+        self.con.sql("""
+            INSERT INTO equity_curve (run_id, ts, equity)
+            VALUES (?, ?, ?)
+        """, [self.run_id, ts, equity])
+
+# ---------- Motor simple de ejecución ----------
+class Executor:
+    """Motor minimal de órdenes + PnL con fees maker/taker."""
+    def __init__(self, account: Account, store: RunStore,
+                 maker_bps: float, taker_bps: float, slippage_bps: float):
+        self.acc = account
+        self.store = store
+        self.maker_bps = maker_bps / 10_000.0
+        self.taker_bps = taker_bps / 10_000.0
+        self.slip = slippage_bps / 10_000.0
+        self.open_orders: Dict[int, Order] = {}
+        self.next_order_id = 1
+
+    def _apply_fill(self, ts: int, side: str, px: float, qty: float,
+                    taker: bool) -> Tuple[float, float, float]:
+        """Aplica el fill a la cuenta. Devuelve (realized_pnl, fee, new_avg_price)."""
+        notional = px * qty
+        fee = notional * (self.taker_bps if taker else self.maker_bps)
+
+        # BUY aumenta qty, SELL reduce. Realized al reducir contra avg.
+        realized = 0.0
+        pos = self.acc.position
+
+        if side == "BUY":
+            # si cerramos parte de un short (qty negativa)
+            if pos.qty < 0:
+                # qué tanto reducimos?
+                close_qty = min(qty, -pos.qty)
+                realized += (pos.avg_price - px) * close_qty  # short profit si px < avg
+                pos.qty += close_qty  # menos negativo
+                qty -= close_qty
+                # si quedó qty de compra para abrir long
+                if qty > 0:
+                    # abrir/incrementar long
+                    new_qty = pos.qty + qty
+                    pos.avg_price = (pos.avg_price * pos.qty + px * qty) / new_qty if new_qty != 0 else px
+                    pos.qty = new_qty
+            else:
+                # long add
+                new_qty = pos.qty + qty
+                pos.avg_price = (pos.avg_price * pos.qty + px * qty) / new_qty if new_qty != 0 else px
+                pos.qty = new_qty
+            self.acc.cash -= (notional + fee)
+
+        else:  # SELL
+            if pos.qty > 0:
+                close_qty = min(qty, pos.qty)
+                realized += (px - pos.avg_price) * close_qty  # long profit si px > avg
+                pos.qty -= close_qty
+                qty -= close_qty
+                if qty > 0:
+                    # abrir/incrementar short (avg_price = px cuando qty < 0)
+                    new_qty = pos.qty - qty
+                    pos.avg_price = (pos.avg_price * pos.qty + px * (-qty)) / new_qty if new_qty != 0 else px
+                    pos.qty = new_qty
+            else:
+                # short add
+                new_qty = pos.qty - qty
+                pos.avg_price = (pos.avg_price * pos.qty + px * (-qty)) / new_qty if new_qty != 0 else px
+                pos.qty = new_qty
+            self.acc.cash += (notional - fee)
+
+        return realized, fee, pos.avg_price
+
+    def place_order(self, symbol: str, side: str, type_: str,
+                    qty: float, price: Optional[float], tif: str,
+                    cur_price: float) -> Order:
+        oid = self.next_order_id
+        self.next_order_id += 1
+        coid = f"sim-{oid}"
+        order = Order(
+            order_id=oid, client_order_id=coid, symbol=symbol, side=side,
+            type=type_, qty=qty, price=price, tif=tif
+        )
+
+        ts = now_ms()
+        if type_.upper() == "MARKET":
+            # slippage simple en contra
+            fill_px = cur_price * (1 + self.slip if side == "BUY" else 1 - self.slip)
+            realized, fee, _ = self._apply_fill(ts, side, fill_px, qty, taker=True)
+            order.executed_qty = qty
+            order.status = "FILLED"
+            order.is_maker = False
+            order.fills.append({
+                "price": f"{fill_px:.8f}",
+                "qty": f"{qty:.8f}",
+                "commission": f"{fee:.8f}",
+                "commissionAsset": "USDT",
+            })
+            self.store.log_fill(ts, symbol, side, fill_px, qty, realized, fee, is_maker=False)
+        else:
+            # LIMIT -> queda viva hasta cruce
+            self.open_orders[oid] = order
+
+        return order
+
+    def on_bar(self, bar_open: float, bar_high: float, bar_low: float, ts_close: int, symbol: str):
+        """Intenta cruzar LIMITs con la barra actual."""
+        to_fill: List[int] = []
+        for oid, o in self.open_orders.items():
+            if o.status != "NEW" or o.type != "LIMIT" or o.price is None:
+                continue
+            # BUY se llena si low <= price; SELL si high >= price
+            if o.side == "BUY" and bar_low <= o.price:
+                fill_px = o.price
+            elif o.side == "SELL" and bar_high >= o.price:
+                fill_px = o.price
+            else:
+                continue
+            # maker
+            realized, fee, _ = self._apply_fill(ts_close, o.side, fill_px, o.qty, taker=False)
+            o.executed_qty = o.qty
+            o.status = "FILLED"
+            o.is_maker = True
+            o.fills.append({
+                "price": f"{fill_px:.8f}",
+                "qty": f"{o.qty:.8f}",
+                "commission": f"{fee:.8f}",
+                "commissionAsset": "USDT",
+            })
+            self.store.log_fill(ts_close, symbol, o.side, fill_px, o.qty, realized, fee, is_maker=True)
+            to_fill.append(oid)
+
+        for oid in to_fill:
+            self.open_orders.pop(oid, None)
+
+    def cancel(self, order_id: int) -> bool:
+        o = self.open_orders.get(order_id)
+        if not o:
+            return False
+        o.status = "CANCELED"
+        self.open_orders.pop(order_id, None)
+        return True
+
+# ---------- Servicio principal ----------
+class SimGateway:
+    def __init__(self, cfg: ReplayConfig):
+        self.cfg = cfg
+        # conexión RW única
+        self.con = duckdb.connect(cfg.db_path, read_only=False)
+        self.store = RunStore(self.con)
+        self.account = Account(cash=cfg.starting_balance)
+        self.exec = Executor(self.account, self.store, cfg.maker_bps, cfg.taker_bps, cfg.slippage_bps)
+
+        self.symbol = cfg.symbol.upper()
+        self.interval = parse_interval_str(cfg.interval)
+        self.kline_rows: List[Tuple[int, float, float, float, float, float, int]] = []  # (ts,o,h,l,c,vol,close_ts)
+
+        self.ws_clients: Set[WebSocket] = set()
+        self.replay_task: Optional[asyncio.Task] = None
+        self.running = False
+        self.cur_price: float = 0.0
+
+        self._load_bars()
+
+        # crear run
+        params = {
+            "symbol": self.symbol,
+            "interval": self.interval,
+            "start_ts": cfg.start_ts,
+            "end_ts": cfg.end_ts,
+            "maker_bps": cfg.maker_bps,
+            "taker_bps": cfg.taker_bps,
+            "slippage_bps": cfg.slippage_bps,
+            "starting_balance": cfg.starting_balance,
+            "speed_bars_per_sec": cfg.speed_bars_per_sec,
+        }
+        self.run_id = self.store.new_run(strategy="gateway/binance-sim", params=params)
+
+    def _load_bars(self):
+        tbl = table_for_interval(self.interval)
+        rows = self.con.sql(f"""
+            SELECT ts, open, high, low, close, volume, close_ts
+            FROM {tbl}
+            WHERE symbol = ? AND ts >= ? AND ts <= ?
+            ORDER BY ts ASC
+        """, [self.symbol, self.cfg.start_ts, self.cfg.end_ts]).fetchall()
+        self.kline_rows = [(int(a), float(b), float(c), float(d), float(e), float(f), int(g)) for a,b,c,d,e,f,g in rows]
+
+    async def start(self):
+        if self.running:
+            return
+        self.running = True
+        self.replay_task = asyncio.create_task(self._replay_loop())
+
+    async def stop(self):
+        self.running = False
+        if self.replay_task:
+            self.replay_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self.replay_task
+
+    async def register_ws(self, ws: WebSocket):
+        await ws.accept()
+        self.ws_clients.add(ws)
+
+    def unregister_ws_sync(self, ws: WebSocket):
+        self.ws_clients.discard(ws)
+
+    async def _broadcast(self, msg: Dict[str, Any]):
+        data = json.dumps(msg)
+        dead: List[WebSocket] = []
+        for ws in list(self.ws_clients):
+            try:
+                await ws.send_text(data)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.unregister_ws_sync(ws)
+
+    async def _replay_loop(self):
+        # velocidad = N velas/seg → delay = 1/N s entre velas
+        delay = 1.0 / max(self.cfg.speed_bars_per_sec, 0.001)
+        for (ts, o, h, l, c, v, cts) in self.kline_rows:
+            if not self.running:
+                break
+            self.cur_price = float(o)
+            # cruzar LIMITs con la barra
+            self.exec.on_bar(bar_open=o, bar_high=h, bar_low=l, ts_close=cts, symbol=self.symbol)
+            # equity al close
+            equity = self.account.mark_to_market(c)
+            self.store.log_equity(cts, equity)
+
+            # broadcast kline cerrado (x=true)
+            k = {
+                "e": "kline", "E": now_ms(), "s": self.symbol,
+                "k": {
+                    "t": ts, "T": cts, "s": self.symbol, "i": self.interval,
+                    "o": f"{o:.8f}", "c": f"{c:.8f}", "h": f"{h:.8f}", "l": f"{l:.8f}",
+                    "v": f"{v:.8f}", "n": 0, "x": True, "q": "0", "V": "0", "Q": "0", "B": "0"
+                }
+            }
+            await self._broadcast({
+                "stream": f"{self.symbol.lower()}@kline_{self.interval}",
+                "data": k
+            })
+            await asyncio.sleep(delay)
+
+# ---------- FastAPI ----------
+def create_app(cfg: ReplayConfig) -> FastAPI:
+    app = FastAPI(title="Binance Futures Sim Gateway", version="0.1.0")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"], allow_credentials=True,
+        allow_methods=["*"], allow_headers=["*"],
+    )
+
+    gw = SimGateway(cfg)
+
+    # -------- REST: Histórico ----------
+    @app.get("/fapi/v1/klines")
+    def get_klines(symbol: str = Query(...), interval: str = Query(...),
+                   startTime: Optional[int] = Query(None), endTime: Optional[int] = Query(None),
+                   limit: Optional[int] = Query(None)):
+        symbol_u = symbol.upper()
+        tbl = table_for_interval(interval)
+        sql = f"SELECT ts, open, high, low, close, volume, close_ts FROM {tbl} WHERE symbol = ?"
+        params: List[Any] = [symbol_u]
+        if startTime is not None:
+            sql += " AND ts >= ?"; params.append(int(startTime))
+        if endTime is not None:
+            sql += " AND ts <= ?"; params.append(int(endTime))
+        sql += " ORDER BY ts ASC"
+        if limit is not None:
+            sql += " LIMIT ?"; params.append(int(limit))
+        rows = gw.con.sql(sql, params).fetchall()
+        # Binance array of arrays
+        return [[int(a), float(b), float(c), float(d), float(e), float(f), int(g)] for a,b,c,d,e,f,g in rows]
+
+    @app.get("/fapi/v1/fundingRate")
+    def get_fundingRate(symbol: str, startTime: Optional[int] = None, endTime: Optional[int] = None, limit: Optional[int] = None):
+        sql = "SELECT funding_time, funding_rate FROM funding WHERE symbol = ?"
+        params: List[Any] = [symbol.upper()]
+        if startTime is not None:
+            sql += " AND funding_time >= ?"; params.append(int(startTime))
+        if endTime is not None:
+            sql += " AND funding_time <= ?"; params.append(int(endTime))
+        sql += " ORDER BY funding_time ASC"
+        if limit is not None:
+            sql += " LIMIT ?"; params.append(int(limit))
+        rows = gw.con.sql(sql, params).fetchall()
+        return [{"symbol": symbol.upper(), "fundingTime": int(t), "fundingRate": float(r)} for (t, r) in rows]
+
+    @app.get("/fapi/v3/ticker/bookTicker")
+    def book_ticker(symbol: str):
+        # mid armado desde último precio (usamos cur_price como proxy)
+        px = gw.cur_price if gw.cur_price > 0 else (gw.kline_rows[0][1] if gw.kline_rows else 0.0)
+        bid = px * (1 - 0.0002)
+        ask = px * (1 + 0.0002)
+        return {
+            "symbol": symbol.upper(),
+            "bidPrice": f"{bid:.8f}", "bidQty": "1.00000000",
+            "askPrice": f"{ask:.8f}", "askQty": "1.00000000",
+        }
+
+    # -------- REST: Órdenes / Cuenta ----------
+    class OrderBody(BaseModel):
+        symbol: str
+        side: str
+        type: str
+        quantity: float = Field(..., alias="origQty")
+        price: Optional[float] = None
+        timeInForce: Optional[str] = "GTC"
+        newClientOrderId: Optional[str] = None
+
+    @app.post("/fapi/v1/order")
+    def post_order(ob: OrderBody = Body(...)):
+        symbol = ob.symbol.upper()
+        side = ob.side.upper()
+        type_ = ob.type.upper()
+        qty = float(ob.quantity)
+        tif = (ob.timeInForce or "GTC").upper()
+        price = float(ob.price) if ob.price is not None else None
+
+        if type_ not in ("MARKET", "LIMIT"):
+            return JSONResponse({"code": -1116, "msg": "Unsupported order type"}, status_code=400)
+        if type_ == "LIMIT" and (price is None or price <= 0):
+            return JSONResponse({"code": -1013, "msg": "Invalid price for LIMIT"}, status_code=400)
+        if qty <= 0:
+            return JSONResponse({"code": -1013, "msg": "Invalid quantity"}, status_code=400)
+
+        cur_px = gw.cur_price if gw.cur_price > 0 else (gw.kline_rows[0][1] if gw.kline_rows else 0.0)
+        od = gw.exec.place_order(symbol, side, type_, qty, price, tif, cur_px)
+        resp = {
+            "symbol": symbol, "orderId": od.order_id, "clientOrderId": od.client_order_id,
+            "transactTime": now_ms(), "price": f"{od.price or 0:.8f}",
+            "origQty": f"{od.qty:.8f}", "executedQty": f"{od.executed_qty:.8f}",
+            "status": od.status, "timeInForce": tif, "type": type_, "side": side,
+        }
+        if od.fills:
+            resp["fills"] = od.fills
+        return resp
+
+    @app.delete("/fapi/v1/order")
+    def delete_order(symbol: str, orderId: int):
+        ok = gw.exec.cancel(orderId)
+        if not ok:
+            return JSONResponse({"code": -2011, "msg": "Unknown order sent."}, status_code=400)
+        return {"symbol": symbol.upper(), "orderId": orderId, "status": "CANCELED"}
+
+    @app.get("/fapi/v1/openOrders")
+    def open_orders(symbol: Optional[str] = None):
+        lst = []
+        for od in gw.exec.open_orders.values():
+            if symbol and od.symbol != symbol.upper():
+                continue
+            lst.append({
+                "symbol": od.symbol, "orderId": od.order_id, "clientOrderId": od.client_order_id,
+                "price": f"{(od.price or 0):.8f}", "origQty": f"{od.qty:.8f}",
+                "executedQty": f"{od.executed_qty:.8f}", "status": od.status,
+                "timeInForce": od.tif, "type": od.type, "side": od.side,
+                "updateTime": od.ts,
+            })
+        return lst
+
+    @app.get("/fapi/v2/balance")
+    def balance():
+        px = gw.cur_price if gw.cur_price > 0 else (gw.kline_rows[0][1] if gw.kline_rows else 0.0)
+        equity = gw.account.mark_to_market(px)
+        return [{
+            "accountAlias": "SIM",
+            "asset": "USDT",
+            "balance": f"{equity:.8f}",
+            "crossWalletBalance": f"{equity:.8f}",
+            "availableBalance": f"{(gw.account.cash):.8f}",
+            "maxWithdrawAmount": f"{gw.account.cash:.8f}",
+            "updateTime": now_ms()
+        }]
+
+    @app.get("/fapi/v2/positionRisk")
+    def position_risk(symbol: Optional[str] = None):
+        px = gw.cur_price if gw.cur_price > 0 else (gw.kline_rows[0][1] if gw.kline_rows else 0.0)
+        pos = gw.account.position
+        upnl = (px - pos.avg_price) * pos.qty if pos.qty != 0 else 0.0
+        return [{
+            "symbol": gw.symbol,
+            "positionAmt": f"{pos.qty:.8f}",
+            "entryPrice": f"{pos.avg_price:.8f}",
+            "unRealizedProfit": f"{upnl:.8f}",
+            "markPrice": f"{px:.8f}",
+            "leverage": "1",
+            "marginType": "cross",
+            "updateTime": now_ms(),
+            "positionSide": "BOTH",
+        }]
+
+    # -------- WebSocket: multiplex /stream ----------
+    @app.websocket("/ws/stream")
+    async def stream(ws: WebSocket, streams: str):
+        # Binance usa "streams=btcusdt@kline_1m[/btcusdt@bookTicker]"
+        await gw.register_ws(ws)
+        try:
+            while True:
+                # No esperamos mensajes; solo mantener vivo el socket
+                await ws.receive_text()
+        except WebSocketDisconnect:
+            gw.unregister_ws_sync(ws)
+
+    # -------- Admin ----------
+    class ReplayBody(BaseModel):
+        symbol: Optional[str] = None
+        interval: Optional[str] = None
+        start_ts: Optional[int] = None
+        end_ts: Optional[int] = None
+        speed_bars_per_sec: Optional[float] = None
+        starting_balance: Optional[float] = None
+        maker_bps: Optional[float] = None
+        taker_bps: Optional[float] = None
+        slippage_bps: Optional[float] = None
+
+    @app.post("/admin/replay")
+    async def admin_replay(cfg_in: ReplayBody):
+        # Reinicio "en caliente": cerramos run actual, reconfiguramos y creamos nuevo run
+        if cfg_in.symbol: gw.symbol = cfg_in.symbol.upper()
+        if cfg_in.interval: gw.interval = parse_interval_str(cfg_in.interval)
+        if cfg_in.start_ts is not None: gw.cfg.start_ts = int(cfg_in.start_ts)
+        if cfg_in.end_ts is not None: gw.cfg.end_ts = int(cfg_in.end_ts)
+        if cfg_in.speed_bars_per_sec is not None: gw.cfg.speed_bars_per_sec = float(cfg_in.speed_bars_per_sec)
+        if cfg_in.starting_balance is not None:
+            gw.cfg.starting_balance = float(cfg_in.starting_balance)
+            gw.account = Account(cash=gw.cfg.starting_balance)
+            gw.exec = Executor(gw.account, gw.store, gw.cfg.maker_bps, gw.cfg.taker_bps, gw.cfg.slippage_bps)
+        if cfg_in.maker_bps is not None: gw.cfg.maker_bps = float(cfg_in.maker_bps)
+        if cfg_in.taker_bps is not None: gw.cfg.taker_bps = float(cfg_in.taker_bps)
+        if cfg_in.slippage_bps is not None: gw.cfg.slippage_bps = float(cfg_in.slippage_bps)
+
+        gw._load_bars()
+        # nuevo run
+        params = {
+            "symbol": gw.symbol, "interval": gw.interval,
+            "start_ts": gw.cfg.start_ts, "end_ts": gw.cfg.end_ts,
+            "maker_bps": gw.cfg.maker_bps, "taker_bps": gw.cfg.taker_bps,
+            "slippage_bps": gw.cfg.slippage_bps, "starting_balance": gw.cfg.starting_balance,
+            "speed_bars_per_sec": gw.cfg.speed_bars_per_sec,
+        }
+        run_id = gw.store.new_run(strategy="gateway/binance-sim", params=params)
+        # arrancar replay si no estaba
+        if not gw.running:
+            asyncio.create_task(gw.start())
+        return {"ok": True, "run_id": run_id, "bars": len(gw.kline_rows)}
+
+    @app.get("/admin/status")
+    def admin_status():
+        px = gw.cur_price if gw.cur_price > 0 else (gw.kline_rows[0][1] if gw.kline_rows else 0.0)
+        return {
+            "symbol": gw.symbol, "interval": gw.interval,
+            "run_id": gw.store.run_id, "ws_clients": len(gw.ws_clients),
+            "bars_loaded": len(gw.kline_rows),
+            "equity_now": gw.account.mark_to_market(px) if px > 0 else gw.account.cash,
+            "position": {"qty": gw.account.position.qty, "avg_price": gw.account.position.avg_price},
+        }
+
+    # arranca el loop automáticamente
+    @app.on_event("startup")
+    async def _startup():
+        await gw.start()
+
+    return app
+
+# ---------- CLI ----------
+def main():
+    ap = argparse.ArgumentParser(description="Binance Futures Sim Gateway (REST+WS)")
+    ap.add_argument("--duckdb-path", type=str, default="data/duckdb/exsim.duckdb")
+    ap.add_argument("--symbol", type=str, default="BTCUSDT")
+    ap.add_argument("--interval", type=str, default="1m")
+    ap.add_argument("--start", type=str, required=True, help="YYYY-MM-DD or ms")
+    ap.add_argument("--end", type=str, required=True, help="YYYY-MM-DD or ms")
+    ap.add_argument("--speed", type=float, default=10.0, help="bars per second")
+    ap.add_argument("--maker-bps", type=float, default=2.0)
+    ap.add_argument("--taker-bps", type=float, default=4.0)
+    ap.add_argument("--slippage-bps", type=float, default=0.0)
+    ap.add_argument("--starting-balance", type=float, default=100_000.0)
+    ap.add_argument("--host", type=str, default="0.0.0.0")
+    ap.add_argument("--port", type=int, default=9001)
+    args = ap.parse_args()
+
+    # parse fechas
+    def to_ms(s: str) -> int:
+        if s.isdigit():
+            v = int(s)
+            return v if v > 10_000_000_000 else v * 1000
+        from datetime import datetime, timezone
+        s2 = s.strip().replace("Z", "")
+        try:
+            dt = datetime.fromisoformat(s2)
+        except Exception:
+            dt = datetime.strptime(s2, "%Y-%m-%d")
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp() * 1000)
+
+    cfg = ReplayConfig(
+        db_path=args.duckdb_path,
+        symbol=args.symbol,
+        interval=args.interval,
+        start_ts=to_ms(args.start),
+        end_ts=to_ms(args.end),
+        speed_bars_per_sec=args.speed,
+        maker_bps=args.maker_bps,
+        taker_bps=args.taker_bps,
+        slippage_bps=args.slippage_bps,
+        starting_balance=args.starting_balance,
+    )
+    app = create_app(cfg)
+    uvicorn.run(app, host=args.host, port=args.port)
+
+if __name__ == "__main__":
+    main()
