@@ -8,6 +8,9 @@ Un gateway REST/WS compatible (subset) con **Binance USDⓈ-M Futures** para re�
 
 ```bash
 # 1) Ejecutar el gateway
+
+source .venv/bin/activate     # <- esto “entra” al venv
+
 python -m gateway.main \
   --duckdb-path data/duckdb/exsim.duckdb \
   --symbol BTCUSDT --interval 1m \

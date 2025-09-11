@@ -1,18 +1,17 @@
 """
-Rutas de órdenes / libro simulado:
-- POST   /fapi/v1/order              → crea LIMIT/MARKET (acepta quantity u origQty)
-- DELETE /fapi/v1/order              → cancela por orderId
-- DELETE /fapi/v1/allOpenOrders      → cancela todas por símbolo
-- GET    /fapi/v1/openOrders         → lista órdenes vivas
-- GET    /fapi/v1/ticker/bookTicker  → bid/ask sintético
+Rutas de órdenes / cuenta (subset Binance USDⓈ-M):
+- POST   /fapi/v1/order             → MARKET/LIMIT (form/json/query)
+- DELETE /fapi/v1/order             → cancela por orderId
+- DELETE /fapi/v1/allOpenOrders     → cancela todas por símbolo
+- GET    /fapi/v1/openOrders        → órdenes vivas
+- GET    /fapi/v3/ticker/bookTicker → bid/ask sintético
 """
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 from .deps import get_sim
 from ..core.models import now_ms
@@ -20,71 +19,138 @@ from ..core.models import now_ms
 router = APIRouter()
 
 
-class OrderBody(BaseModel):
-    symbol: str
-    side: str
-    type: str
-    quantity: Optional[float] = None   # lo que normalmente envía binance-connector
-    origQty: Optional[float] = None    # compat extra
-    price: Optional[float] = None
-    timeInForce: Optional[str] = "GTC"
-    newClientOrderId: Optional[str] = None
-    reduceOnly: Optional[bool] = False
-    stopPrice: Optional[float] = None
+def _to_bool(v: Any) -> bool:
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return False
+    s = str(v).strip().lower()
+    return s in ("1", "true", "yes", "y", "on")
+
+
+async def _read_params(request: Request) -> Dict[str, Any]:
+    """
+    Acepta parámetros en:
+      - JSON (application/json)
+      - FORM (application/x-www-form-urlencoded, multipart/form-data)
+      - QUERY (también firmado: timestamp, signature, etc.) → se ignoran extras desconocidos
+    Funde QUERY primero y luego BODY para dar prioridad al body si hay colisión.
+    """
+    out: Dict[str, Any] = dict(request.query_params)
+
+    ct = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+    # JSON
+    if ct == "application/json":
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                out.update(body)
+        except Exception:
+            pass
+    # FORM (urlencoded o multipart)
+    elif ct in ("application/x-www-form-urlencoded", "multipart/form-data"):
+        try:
+            form = await request.form()
+            # FormData -> dict toma el primer valor por clave (igual que binance-connector)
+            out.update(dict(form))
+        except Exception:
+            pass
+    else:
+        # Algunos clientes envían el payload urlencoded con content-type vacío;
+        # intentamos parsear como form si hay body.
+        try:
+            body_bytes = await request.body()
+            if body_bytes:
+                from urllib.parse import parse_qsl
+                parsed = dict(parse_qsl(body_bytes.decode("utf-8", "ignore")))
+                out.update(parsed)
+        except Exception:
+            pass
+
+    return out
 
 
 @router.post("/fapi/v1/order")
-def post_order(ob: OrderBody = Body(...), sim = Depends(get_sim)):
-    symbol = ob.symbol.upper()
-    side = ob.side.upper()
-    type_ = ob.type.upper()
-    tif = (ob.timeInForce or "GTC").upper()
+async def post_order(request: Request, sim=Depends(get_sim)):
+    p = await _read_params(request)
 
-    # cantidad: quantity u origQty
-    qty_val = ob.quantity if ob.quantity is not None else ob.origQty
-    if qty_val is None:
+    symbol = (p.get("symbol") or "").upper()
+    side = (p.get("side") or "").upper()
+    type_ = (p.get("type") or "").upper()
+    tif = (p.get("timeInForce") or "GTC").upper()
+    client_id = p.get("newClientOrderId") or p.get("clientOrderId") or None
+
+    # cantidad: Binance acepta 'quantity' y también 'origQty' (según SDK/endpoint).
+    qty_raw = p.get("quantity") or p.get("origQty") or p.get("qty")
+    price_raw = p.get("price")
+    stop_price_raw = p.get("stopPrice")
+    reduce_only = _to_bool(p.get("reduceOnly"))
+
+    if not symbol:
+        return JSONResponse(
+            {"code": -1102, "msg": "Mandatory parameter 'symbol' was not sent, was empty/null, or malformed."},
+            status_code=400,
+        )
+    if not side:
+        return JSONResponse(
+            {"code": -1102, "msg": "Mandatory parameter 'side' was not sent, was empty/null, or malformed."},
+            status_code=400,
+        )
+    if not type_:
+        return JSONResponse(
+            {"code": -1102, "msg": "Mandatory parameter 'type' was not sent, was empty/null, or malformed."},
+            status_code=400,
+        )
+    if qty_raw is None:
+        return JSONResponse(
+            {"code": -1102, "msg": "Mandatory parameter 'quantity' was not sent, was empty/null, or malformed."},
+            status_code=400,
+        )
+
+    # parseos numéricos
+    try:
+        qty = float(qty_raw)
+    except Exception:
         return JSONResponse({"code": -1013, "msg": "Invalid quantity"}, status_code=400)
-    qty = float(qty_val)
 
+    price: Optional[float] = None
+    if price_raw is not None and str(price_raw).strip() != "":
+        try:
+            price = float(price_raw)
+        except Exception:
+            return JSONResponse({"code": -1013, "msg": "Invalid price"}, status_code=400)
+
+    stop_price: Optional[float] = None
+    if stop_price_raw is not None and str(stop_price_raw).strip() != "":
+        try:
+            stop_price = float(stop_price_raw)
+        except Exception:
+            return JSONResponse({"code": -1013, "msg": "Invalid stopPrice"}, status_code=400)
+
+    # Validaciones tipo
     if type_ not in ("MARKET", "LIMIT"):
         return JSONResponse({"code": -1116, "msg": "Unsupported order type"}, status_code=400)
-    if type_ == "LIMIT":
-        if ob.price is None or float(ob.price) <= 0:
-            return JSONResponse({"code": -1013, "msg": "Invalid price for LIMIT"}, status_code=400)
-        price = float(ob.price)
-    else:
-        price = None
-
+    if type_ == "LIMIT" and (price is None or price <= 0):
+        return JSONResponse({"code": -1013, "msg": "Invalid price for LIMIT"}, status_code=400)
     if qty <= 0:
         return JSONResponse({"code": -1013, "msg": "Invalid quantity"}, status_code=400)
 
-    cur_px = sim.cur_price if sim.cur_price > 0 else (
-        sim.replayer._bars[0][1] if sim.replayer._bars else 0.0
-    )
+    # Precio actual (para MARKET / bookTicker)
+    cur_px = sim.cur_price if sim.cur_price > 0 else (sim.replayer._bars[0][1] if sim.replayer._bars else 0.0)
 
-    od = sim.exec.place_order(
-        symbol=symbol,
-        side=side,
-        type_=type_,
-        qty=qty,
-        price=price,
-        tif=tif,
-        cur_price=cur_px,
-        client_id=ob.newClientOrderId,
-        reduce_only=bool(ob.reduceOnly),
-        stop_price=float(ob.stopPrice) if ob.stopPrice is not None else None,
-    )
+    # Ejecutar en simulador
+    od = sim.exec.place_order(symbol=symbol, side=side, type_=type_, qty=qty, price=price, tif=tif, cur_price=cur_px)
 
     resp = {
         "symbol": symbol,
         "orderId": od.order_id,
-        "clientOrderId": od.client_order_id,
+        "clientOrderId": client_id or od.client_order_id,
         "transactTime": now_ms(),
-        "price": f"{od.price or 0:.8f}",
+        "price": f"{(od.price or 0):.8f}",
         "origQty": f"{od.qty:.8f}",
         "executedQty": f"{od.executed_qty:.8f}",
         "status": od.status,
-        "timeInForce": tif,
+        "timeInForce": od.tif,
         "type": type_,
         "side": side,
     }
@@ -94,7 +160,7 @@ def post_order(ob: OrderBody = Body(...), sim = Depends(get_sim)):
 
 
 @router.delete("/fapi/v1/order")
-def delete_order(symbol: str = Query(...), orderId: int = Query(...), sim = Depends(get_sim)):
+async def delete_order(symbol: str = Query(...), orderId: int = Query(...), sim=Depends(get_sim)):
     ok = sim.exec.cancel(orderId)
     if not ok:
         return JSONResponse({"code": -2011, "msg": "Unknown order sent."}, status_code=400)
@@ -102,42 +168,37 @@ def delete_order(symbol: str = Query(...), orderId: int = Query(...), sim = Depe
 
 
 @router.delete("/fapi/v1/allOpenOrders")
-def cancel_all_open(symbol: str = Query(...), sim = Depends(get_sim)):
-    to_del = [oid for oid, o in list(sim.exec.open_orders.items()) if o.symbol == symbol.upper()]
-    for oid in to_del:
+async def delete_all_open_orders(symbol: str = Query(...), sim=Depends(get_sim)):
+    to_cancel: List[int] = []
+    for oid, od in list(sim.exec.open_orders.items()):
+        if od.symbol == symbol.upper() and od.status == "NEW":
+            to_cancel.append(oid)
+    for oid in to_cancel:
         sim.exec.cancel(oid)
-    return []
+    return {"code": 200, "msg": "All open orders canceled."}
 
 
 @router.get("/fapi/v1/openOrders")
-def open_orders(symbol: Optional[str] = None, sim = Depends(get_sim)):
-    lst: List[dict[str, Any]] = []
+async def open_orders(symbol: Optional[str] = None, sim=Depends(get_sim)):
+    lst = []
     for od in sim.exec.open_orders.values():
         if symbol and od.symbol != symbol.upper():
             continue
         lst.append({
-            "symbol": od.symbol,
-            "orderId": od.order_id,
-            "clientOrderId": od.client_order_id,
-            "price": f"{(od.price or 0):.8f}",
-            "origQty": f"{od.qty:.8f}",
-            "executedQty": f"{od.executed_qty:.8f}",
-            "status": od.status,
-            "timeInForce": od.tif,
-            "type": od.type,
-            "side": od.side,
+            "symbol": od.symbol, "orderId": od.order_id, "clientOrderId": od.client_order_id,
+            "price": f"{(od.price or 0):.8f}", "origQty": f"{od.qty:.8f}",
+            "executedQty": f"{od.executed_qty:.8f}", "status": od.status,
+            "timeInForce": od.tif, "type": od.type, "side": od.side,
             "updateTime": od.ts,
         })
     return lst
 
 
-@router.get("/fapi/v1/ticker/bookTicker")
-def book_ticker(symbol: str = Query(...), sim = Depends(get_sim)):
-    px = sim.cur_price if sim.cur_price > 0 else (
-        sim.replayer._bars[0][1] if sim.replayer._bars else 0.0
-    )
-    bid = float(px) * (1 - 0.0002)
-    ask = float(px) * (1 + 0.0002)
+@router.get("/fapi/v3/ticker/bookTicker")
+async def book_ticker(symbol: str, sim=Depends(get_sim)):
+    px = sim.cur_price if sim.cur_price > 0 else (sim.replayer._bars[0][1] if sim.replayer._bars else 0.0)
+    bid = px * (1 - 0.0002)
+    ask = px * (1 + 0.0002)
     return {
         "symbol": symbol.upper(),
         "bidPrice": f"{bid:.8f}", "bidQty": "1.00000000",
