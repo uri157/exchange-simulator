@@ -1,55 +1,58 @@
-"""
-Rutas de metadatos del exchange (subset Binance UM-Futures):
-- GET /fapi/v1/exchangeInfo
-"""
+# routes_meta.py
 from __future__ import annotations
-
-from typing import List
-
-from fastapi import APIRouter, Depends, Request
-
-from .deps import get_sim
+import threading
+from fastapi import APIRouter, Depends
 from ..core.models import now_ms
+from .deps import get_sim
 
 router = APIRouter()
-
+_duck_lock = threading.Lock()  # <<< NUEVO
 
 @router.get("/fapi/v1/exchangeInfo")
-def exchange_info(req: Request, sim = Depends(get_sim)):
-    # Descubrir símbolos disponibles desde las tablas OHLC
-    rows = sim.con.sql(
-        """
-        SELECT DISTINCT symbol FROM ohlc
-        UNION
-        SELECT DISTINCT symbol FROM ohlc_1m
-        """
-    ).fetchall()
-    symbols: List[str] = [r[0] for r in rows] or [sim.symbol]
+def exchange_info(sim = Depends(get_sim)):
+    symbol = sim.symbol.upper()  # p.ej. BTCUSDT
+    base, quote = symbol[:-4], symbol[-4:]
 
-    # Defaults simples; se pueden ajustar por env o por símbolo si querés granularidad
-    import os
-    tick = os.getenv("TICK_SIZE_DEFAULT", "0.1")          # precio mínimo
-    step = os.getenv("STEP_SIZE_DEFAULT", "0.001")         # tamaño mínimo de lote
-    min_qty = os.getenv("MIN_QTY_DEFAULT", "0.0001")
-    max_qty = os.getenv("MAX_QTY_DEFAULT", "100000")
-    price_prec = int(os.getenv("PRICE_PRECISION_DEFAULT", "8"))
-    qty_prec = int(os.getenv("QUANTITY_PRECISION_DEFAULT", "8"))
+    # defaults del sim por si la consulta a DuckDB falla
+    tick_size = getattr(sim, "tick_size", 0.1)
+    step_size = getattr(sim, "step_size", 0.0001)
 
-    out = []
-    for s in symbols:
-        base = s[:-4] if s.endswith("USDT") and len(s) > 4 else s
-        out.append({
-            "symbol": s,
-            "status": "TRADING",
-            "contractType": "PERPETUAL",
-            "baseAsset": base,
-            "quoteAsset": "USDT",
-            "pricePrecision": price_prec,
-            "quantityPrecision": qty_prec,
-            "filters": [
-                {"filterType": "PRICE_FILTER", "tickSize": str(tick)},
-                {"filterType": "LOT_SIZE", "stepSize": str(step), "minQty": str(min_qty), "maxQty": str(max_qty)},
-            ],
-        })
+    # Si tenés meta en DuckDB, leelo protegido por lock
+    try:
+        con = sim.duck  # ajustá al atributo real de tu estado
+        with _duck_lock:
+            # OJO: usar execute()+fetchone() dentro del try
+            row = con.execute(
+                """
+                SELECT tick_size, step_size
+                FROM meta_symbol
+                WHERE symbol = ?
+                """,
+                [symbol],
+            ).fetchone()
+        if row and len(row) >= 2:
+            tick_size = float(row[0])
+            step_size = float(row[1])
+    except Exception as e:
+        # logueá y seguí con defaults
+        if hasattr(sim, "logger"):
+            sim.logger.warning("exchangeInfo meta fallback: %r", e)
 
-    return {"timezone": "UTC", "serverTime": now_ms(), "symbols": out}
+    return {
+        "timezone": "UTC",
+        "serverTime": now_ms(),
+        "symbols": [
+            {
+                "symbol": symbol,
+                "pair": symbol,
+                "status": "TRADING",
+                "contractType": "PERPETUAL",
+                "baseAsset": base,
+                "quoteAsset": quote,
+                "filters": [
+                    {"filterType": "PRICE_FILTER", "tickSize": f"{tick_size:.8f}"},
+                    {"filterType": "LOT_SIZE", "stepSize": f"{step_size:.8f}"},
+                ],
+            }
+        ],
+    }
