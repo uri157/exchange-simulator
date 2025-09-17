@@ -1,5 +1,7 @@
-use std::collections::HashMap;
+// src/infra/clock.rs
+use std::{collections::HashMap, sync::Arc};
 
+use async_trait::async_trait;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -17,25 +19,26 @@ struct ClockState {
 
 #[derive(Clone)]
 pub struct SimulatedClock {
-    inner: std::sync::Arc<RwLock<HashMap<Uuid, ClockState>>>,
+    inner: Arc<RwLock<HashMap<Uuid, ClockState>>>,
     default_speed: Speed,
 }
 
 impl SimulatedClock {
     pub fn new(default_speed: Speed) -> Self {
         Self {
-            inner: std::sync::Arc::new(RwLock::new(HashMap::new())),
+            inner: Arc::new(RwLock::new(HashMap::new())),
             default_speed,
         }
     }
 
-    pub async fn init_session(&self, session_id: Uuid, start_time: TimestampMs) {
+    pub async fn init_session(&self, session_id: Uuid, start_time: TimestampMs) -> Result<(), AppError> {
         let mut guard = self.inner.write().await;
         guard.entry(session_id).or_insert(ClockState {
             current_time: start_time,
             speed: self.default_speed,
             paused: true,
         });
+        Ok(())
     }
 }
 
@@ -50,7 +53,7 @@ mod tests {
         rt.block_on(async {
             let clock = SimulatedClock::new(Speed(2.0));
             let session_id = Uuid::new_v4();
-            clock.init_session(session_id, TimestampMs(0)).await;
+            clock.init_session(session_id, TimestampMs(0)).await.unwrap();
             clock.resume(session_id).await.unwrap();
             clock
                 .advance_to(session_id, TimestampMs(500))
@@ -64,8 +67,18 @@ mod tests {
     }
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl crate::domain::traits::Clock for SimulatedClock {
+    async fn init_session(&self, session_id: Uuid, start_time: TimestampMs) -> Result<(), AppError> {
+        let mut guard = self.inner.write().await;
+        guard.entry(session_id).or_insert(ClockState {
+            current_time: start_time,
+            speed: self.default_speed,
+            paused: true,
+        });
+        Ok(())
+    }
+
     async fn now(&self, session_id: Uuid) -> Result<TimestampMs, AppError> {
         let guard = self.inner.read().await;
         guard

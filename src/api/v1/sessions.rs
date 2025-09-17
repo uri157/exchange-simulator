@@ -17,11 +17,11 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/v1/sessions", post(create_session).get(list_sessions))
-        .route("/api/v1/sessions/:id", get(get_session))
-        .route("/api/v1/sessions/:id/start", post(start_session))
-        .route("/api/v1/sessions/:id/pause", post(pause_session))
-        .route("/api/v1/sessions/:id/resume", post(resume_session))
-        .route("/api/v1/sessions/:id/seek", post(seek_session))
+        .route("/api/v1/sessions/{id}", get(get_session))
+        .route("/api/v1/sessions/{id}/start", post(start_session))
+        .route("/api/v1/sessions/{id}/pause", post(pause_session))
+        .route("/api/v1/sessions/{id}/resume", post(resume_session))
+        .route("/api/v1/sessions/{id}/seek", post(seek_session))
 }
 
 #[utoipa::path(
@@ -54,7 +54,11 @@ pub async fn create_session(
     Ok(Json(session.into()))
 }
 
-#[utoipa::path(get, path = "/api/v1/sessions", responses((status = 200, body = Vec<SessionResponse>)))]
+#[utoipa::path(
+    get,
+    path = "/api/v1/sessions",
+    responses((status = 200, body = Vec<SessionResponse>))
+)]
 #[instrument(skip(state))]
 pub async fn list_sessions(State(state): State<AppState>) -> ApiResult<Json<Vec<SessionResponse>>> {
     let sessions = state.sessions_service.list_sessions().await?;
@@ -63,7 +67,12 @@ pub async fn list_sessions(State(state): State<AppState>) -> ApiResult<Json<Vec<
     ))
 }
 
-#[utoipa::path(get, path = "/api/v1/sessions/{id}", params((name = "id", schema = Uuid)), responses((status = 200, body = SessionResponse)))]
+#[utoipa::path(
+    get,
+    path = "/api/v1/sessions/{id}",
+    params(("id" = Uuid, Path, description = "Session ID")),
+    responses((status = 200, body = SessionResponse))
+)]
 #[instrument(skip(state))]
 pub async fn get_session(
     State(state): State<AppState>,
@@ -73,7 +82,12 @@ pub async fn get_session(
     Ok(Json(session.into()))
 }
 
-#[utoipa::path(post, path = "/api/v1/sessions/{id}/start", params((name = "id", schema = Uuid)), responses((status = 200, body = SessionResponse)))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/sessions/{id}/start",
+    params(("id" = Uuid, Path, description = "Session ID")),
+    responses((status = 200, body = SessionResponse))
+)]
 #[instrument(skip(state))]
 pub async fn start_session(
     State(state): State<AppState>,
@@ -83,7 +97,12 @@ pub async fn start_session(
     Ok(Json(session.into()))
 }
 
-#[utoipa::path(post, path = "/api/v1/sessions/{id}/pause", params((name = "id", schema = Uuid)), responses((status = 200, body = SessionResponse)))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/sessions/{id}/pause",
+    params(("id" = Uuid, Path, description = "Session ID")),
+    responses((status = 200, body = SessionResponse))
+)]
 #[instrument(skip(state))]
 pub async fn pause_session(
     State(state): State<AppState>,
@@ -93,7 +112,12 @@ pub async fn pause_session(
     Ok(Json(session.into()))
 }
 
-#[utoipa::path(post, path = "/api/v1/sessions/{id}/resume", params((name = "id", schema = Uuid)), responses((status = 200, body = SessionResponse)))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/sessions/{id}/resume",
+    params(("id" = Uuid, Path, description = "Session ID")),
+    responses((status = 200, body = SessionResponse))
+)]
 #[instrument(skip(state))]
 pub async fn resume_session(
     State(state): State<AppState>,
@@ -109,7 +133,15 @@ struct SeekQuery {
     to: i64,
 }
 
-#[utoipa::path(post, path = "/api/v1/sessions/{id}/seek", params((name = "id", schema = Uuid), (name = "to", schema = i64)), responses((status = 200, body = SessionResponse)))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/sessions/{id}/seek",
+    params(
+        ("id" = Uuid, Path, description = "Session ID"),
+        ("to" = i64, Query, description = "Seek timestamp in ms")
+    ),
+    responses((status = 200, body = SessionResponse))
+)]
 #[instrument(skip(state, query))]
 pub async fn seek_session(
     State(state): State<AppState>,

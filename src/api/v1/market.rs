@@ -15,7 +15,11 @@ pub fn router() -> Router<AppState> {
         .route("/api/v3/klines", get(klines))
 }
 
-#[utoipa::path(get, path = "/api/v1/exchangeInfo", responses((status = 200, body = ExchangeInfoResponse)))]
+#[utoipa::path(
+    get,
+    path = "/api/v1/exchangeInfo",
+    responses((status = 200, body = ExchangeInfoResponse))
+)]
 #[instrument(skip(state))]
 pub async fn exchange_info(State(state): State<AppState>) -> ApiResult<Json<ExchangeInfoResponse>> {
     let symbols = state.market_service.exchange_info().await?;
@@ -29,11 +33,11 @@ pub async fn exchange_info(State(state): State<AppState>) -> ApiResult<Json<Exch
     get,
     path = "/api/v3/klines",
     params(
-        (name = "symbol", schema = String, description = "Trading pair"),
-        (name = "interval", schema = String, description = "Kline interval"),
-        (name = "startTime", schema = i64, description = "Start time in ms", required = false),
-        (name = "endTime", schema = i64, description = "End time in ms", required = false),
-        (name = "limit", schema = usize, description = "Max klines", required = false)
+        ("symbol" = String, Query, description = "Trading pair"),
+        ("interval" = String, Query, description = "Kline interval"),
+        ("startTime" = i64, Query, description = "Start time in ms"),
+        ("endTime" = i64, Query, description = "End time in ms"),
+        ("limit" = usize, Query, description = "Max klines")
     ),
     responses((status = 200, body = Vec<KlineResponse>))
 )]

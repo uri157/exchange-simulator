@@ -12,7 +12,9 @@ pub struct TimestampMs(pub i64);
 
 impl TimestampMs {
     pub fn as_datetime(&self) -> DateTime<Utc> {
-        Utc.timestamp_millis(self.0)
+        Utc.timestamp_millis_opt(self.0)
+            .single()
+            .expect("invalid timestamp")
     }
 }
 

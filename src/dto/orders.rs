@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::domain::models::{Fill, Order, OrderSide, OrderStatus, OrderType};
@@ -76,7 +76,7 @@ pub struct NewOrderResponse {
     pub fills: Vec<FillResponse>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryOrderParams {
     pub session_id: Uuid,
@@ -85,7 +85,7 @@ pub struct QueryOrderParams {
     pub orig_client_order_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CancelOrderParams {
     pub session_id: Uuid,
@@ -94,14 +94,14 @@ pub struct CancelOrderParams {
     pub orig_client_order_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenOrdersParams {
     pub session_id: Uuid,
     pub symbol: Option<String>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MyTradesParams {
     pub session_id: Uuid,

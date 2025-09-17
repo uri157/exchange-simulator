@@ -1,4 +1,4 @@
-use axum::{Json, Router, extract::Query, routing::get};
+use axum::{Json, Router, extract::{Query, State}, routing::get};
 use tracing::instrument;
 
 use crate::{
@@ -11,10 +11,15 @@ pub fn router() -> Router<AppState> {
     Router::new().route("/api/v3/account", get(get_account))
 }
 
-#[utoipa::path(get, path = "/api/v3/account", params(AccountQuery), responses((status = 200, body = AccountResponse)))]
+#[utoipa::path(
+    get,
+    path = "/api/v3/account",
+    params(AccountQuery),
+    responses((status = 200, body = AccountResponse))
+)]
 #[instrument(skip(state, params))]
 pub async fn get_account(
-    axum::extract::State(state): axum::extract::State<AppState>,
+    State(state): State<AppState>,
     Query(params): Query<AccountQuery>,
 ) -> ApiResult<Json<AccountResponse>> {
     state

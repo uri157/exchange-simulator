@@ -64,8 +64,12 @@ impl SessionsService {
             created_at: now,
             updated_at: now,
         };
-        self.clock.init_session(session_id, start_time).await;
-        self.sessions_repo.insert(config.clone()).await
+
+        // Persist first, then position the clock at the session start.
+        let inserted = self.sessions_repo.insert(config.clone()).await?;
+        self.clock.advance_to(session_id, start_time).await?;
+
+        Ok(inserted)
     }
 
     pub async fn start_session(&self, session_id: Uuid) -> ServiceResult<SessionConfig> {

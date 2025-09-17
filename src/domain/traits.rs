@@ -46,7 +46,7 @@ pub trait SessionsRepo: Send + Sync {
         status: SessionStatus,
     ) -> Result<SessionConfig, AppError>;
     async fn update_speed(&self, session_id: Uuid, speed: Speed)
-    -> Result<SessionConfig, AppError>;
+        -> Result<SessionConfig, AppError>;
     async fn get(&self, session_id: Uuid) -> Result<SessionConfig, AppError>;
     async fn list(&self) -> Result<Vec<SessionConfig>, AppError>;
 }
@@ -71,6 +71,7 @@ pub trait AccountsRepo: Send + Sync {
 
 #[async_trait]
 pub trait Clock: Send + Sync {
+    async fn init_session(&self, session_id: Uuid, start_time: TimestampMs) -> Result<(), AppError>;
     async fn now(&self, session_id: Uuid) -> Result<TimestampMs, AppError>;
     async fn set_speed(&self, session_id: Uuid, speed: Speed) -> Result<(), AppError>;
     async fn advance_to(&self, session_id: Uuid, to: TimestampMs) -> Result<(), AppError>;

@@ -67,28 +67,51 @@ impl AccountService {
             .map(|balance| (balance.asset.clone(), balance))
             .collect();
 
-        let base_balance = balances.entry(base.clone()).or_insert(Balance {
-            asset: base.clone(),
-            free: Quantity::default(),
-            locked: Quantity::default(),
-        });
-        let quote_balance = balances.entry(quote.clone()).or_insert(Balance {
-            asset: quote.clone(),
-            free: Quantity::default(),
-            locked: Quantity::default(),
-        });
-
         let trade_value = price.0 * quantity.0;
+
         match side {
             OrderSide::Buy => {
-                quote_balance.free = Quantity(quote_balance.free.0 - trade_value);
-                base_balance.free = Quantity(base_balance.free.0 + quantity.0);
+                // quote --
+                {
+                    let q = balances.entry(quote.clone()).or_insert(Balance {
+                        asset: quote.clone(),
+                        free: Quantity::default(),
+                        locked: Quantity::default(),
+                    });
+                    q.free = Quantity(q.free.0 - trade_value);
+                }
+                // base ++
+                {
+                    let b = balances.entry(base.clone()).or_insert(Balance {
+                        asset: base.clone(),
+                        free: Quantity::default(),
+                        locked: Quantity::default(),
+                    });
+                    b.free = Quantity(b.free.0 + quantity.0);
+                }
             }
             OrderSide::Sell => {
-                base_balance.free = Quantity(base_balance.free.0 - quantity.0);
-                quote_balance.free = Quantity(quote_balance.free.0 + trade_value);
+                // base --
+                {
+                    let b = balances.entry(base.clone()).or_insert(Balance {
+                        asset: base.clone(),
+                        free: Quantity::default(),
+                        locked: Quantity::default(),
+                    });
+                    b.free = Quantity(b.free.0 - quantity.0);
+                }
+                // quote ++
+                {
+                    let q = balances.entry(quote.clone()).or_insert(Balance {
+                        asset: quote.clone(),
+                        free: Quantity::default(),
+                        locked: Quantity::default(),
+                    });
+                    q.free = Quantity(q.free.0 + trade_value);
+                }
             }
         }
+
         snapshot.balances = balances.into_iter().map(|(_, balance)| balance).collect();
         self.repo.save_account(snapshot.clone()).await?;
         Ok(snapshot)

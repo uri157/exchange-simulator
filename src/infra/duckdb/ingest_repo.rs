@@ -61,7 +61,7 @@ impl MarketIngestor for DuckDbIngestRepo {
             let created_at = TimestampMs::from(Utc::now().timestamp_millis());
             conn.execute(
                 "INSERT INTO datasets(id, name, path, format, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![id, name, path_string, format.to_string(), created_at.0],
+                params![id.to_string(), name, path_string, format.to_string(), created_at.0],
             )
             .map_err(|err| AppError::Database(format!("insert dataset failed: {err}")))?;
             Ok(DatasetMetadata {
@@ -95,10 +95,13 @@ impl MarketIngestor for DuckDbIngestRepo {
                 let format = format_str
                     .parse::<DatasetFormat>()
                     .map_err(|err| AppError::Validation(err.to_string()))?;
+                let id_str: String = row
+                    .get(0)
+                    .map_err(|err| AppError::Database(format!("column error: {err}")))?;
+                let id = Uuid::parse_str(&id_str)
+                    .map_err(|err| AppError::Database(format!("uuid parse error: {err}")))?;
                 out.push(DatasetMetadata {
-                    id: row
-                        .get(0)
-                        .map_err(|err| AppError::Database(format!("column error: {err}")))?,
+                    id,
                     name: row
                         .get(1)
                         .map_err(|err| AppError::Database(format!("column error: {err}")))?,
@@ -123,7 +126,7 @@ impl MarketIngestor for DuckDbIngestRepo {
                 .prepare("SELECT path, format FROM datasets WHERE id = ?1")
                 .map_err(|err| AppError::Database(format!("prepare dataset lookup failed: {err}")))?;
             let mut rows = stmt
-                .query(params![dataset_id])
+                .query(params![dataset_id.to_string()])
                 .map_err(|err| AppError::Database(format!("query dataset failed: {err}")))?;
             let row = rows
                 .next()

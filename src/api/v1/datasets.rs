@@ -19,7 +19,7 @@ pub fn router() -> Router<AppState> {
             "/api/v1/datasets",
             post(register_dataset).get(list_datasets),
         )
-        .route("/api/v1/datasets/:id/ingest", post(ingest_dataset))
+        .route("/api/v1/datasets/{id}/ingest", post(ingest_dataset))
 }
 
 #[utoipa::path(
@@ -44,7 +44,11 @@ pub async fn register_dataset(
     Ok(Json(dataset.into()))
 }
 
-#[utoipa::path(get, path = "/api/v1/datasets", responses((status = 200, body = Vec<DatasetResponse>)))]
+#[utoipa::path(
+    get,
+    path = "/api/v1/datasets",
+    responses((status = 200, body = Vec<DatasetResponse>))
+)]
 #[instrument(skip(state))]
 pub async fn list_datasets(State(state): State<AppState>) -> ApiResult<Json<Vec<DatasetResponse>>> {
     let datasets = state.ingest_service.list_datasets().await?;
@@ -53,7 +57,12 @@ pub async fn list_datasets(State(state): State<AppState>) -> ApiResult<Json<Vec<
     ))
 }
 
-#[utoipa::path(post, path = "/api/v1/datasets/{id}/ingest", params((name = "id", schema = Uuid)), responses((status = 204)))]
+#[utoipa::path(
+    post,
+    path = "/api/v1/datasets/{id}/ingest",
+    params(("id" = Uuid, Path, description = "Dataset ID")),
+    responses((status = 204))
+)]
 #[instrument(skip(state))]
 pub async fn ingest_dataset(
     State(state): State<AppState>,

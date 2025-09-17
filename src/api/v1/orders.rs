@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::Query,
+    extract::{Query, State},
     routing::{delete, get, post},
 };
 use tracing::instrument;
@@ -25,10 +25,15 @@ pub fn router() -> Router<AppState> {
         .route("/api/v3/myTrades", get(my_trades))
 }
 
-#[utoipa::path(post, path = "/api/v3/order", request_body = NewOrderRequest, responses((status = 200, body = NewOrderResponse)))]
+#[utoipa::path(
+    post,
+    path = "/api/v3/order",
+    request_body = NewOrderRequest,
+    responses((status = 200, body = NewOrderResponse))
+)]
 #[instrument(skip(state, payload))]
 pub async fn new_order(
-    axum::extract::State(state): axum::extract::State<AppState>,
+    State(state): State<AppState>,
     Json(payload): Json<NewOrderRequest>,
 ) -> ApiResult<Json<NewOrderResponse>> {
     let (order, fills) = state
@@ -49,10 +54,15 @@ pub async fn new_order(
     }))
 }
 
-#[utoipa::path(get, path = "/api/v3/order", params(QueryOrderParams), responses((status = 200, body = OrderResponse)))]
+#[utoipa::path(
+    get,
+    path = "/api/v3/order",
+    params(QueryOrderParams),
+    responses((status = 200, body = OrderResponse))
+)]
 #[instrument(skip(state, params))]
 pub async fn get_order(
-    axum::extract::State(state): axum::extract::State<AppState>,
+    State(state): State<AppState>,
     Query(params): Query<QueryOrderParams>,
 ) -> ApiResult<Json<OrderResponse>> {
     let order = if let Some(order_id) = params.order_id {
@@ -73,10 +83,15 @@ pub async fn get_order(
     Ok(Json(order.into()))
 }
 
-#[utoipa::path(delete, path = "/api/v3/order", params(CancelOrderParams), responses((status = 200, body = OrderResponse)))]
+#[utoipa::path(
+    delete,
+    path = "/api/v3/order",
+    params(CancelOrderParams),
+    responses((status = 200, body = OrderResponse))
+)]
 #[instrument(skip(state, params))]
 pub async fn cancel_order(
-    axum::extract::State(state): axum::extract::State<AppState>,
+    State(state): State<AppState>,
     Query(params): Query<CancelOrderParams>,
 ) -> ApiResult<Json<OrderResponse>> {
     let order = if let Some(id) = params.order_id {
@@ -101,10 +116,15 @@ pub async fn cancel_order(
     Ok(Json(order.into()))
 }
 
-#[utoipa::path(get, path = "/api/v3/openOrders", params(OpenOrdersParams), responses((status = 200, body = Vec<OrderResponse>)))]
+#[utoipa::path(
+    get,
+    path = "/api/v3/openOrders",
+    params(OpenOrdersParams),
+    responses((status = 200, body = Vec<OrderResponse>))
+)]
 #[instrument(skip(state, params))]
 pub async fn open_orders(
-    axum::extract::State(state): axum::extract::State<AppState>,
+    State(state): State<AppState>,
     Query(params): Query<OpenOrdersParams>,
 ) -> ApiResult<Json<Vec<OrderResponse>>> {
     let orders = state
@@ -114,10 +134,15 @@ pub async fn open_orders(
     Ok(Json(orders.into_iter().map(OrderResponse::from).collect()))
 }
 
-#[utoipa::path(get, path = "/api/v3/myTrades", params(MyTradesParams), responses((status = 200, body = Vec<FillResponse>)))]
+#[utoipa::path(
+    get,
+    path = "/api/v3/myTrades",
+    params(MyTradesParams),
+    responses((status = 200, body = Vec<FillResponse>))
+)]
 #[instrument(skip(state, params))]
 pub async fn my_trades(
-    axum::extract::State(state): axum::extract::State<AppState>,
+    State(state): State<AppState>,
     Query(params): Query<MyTradesParams>,
 ) -> ApiResult<Json<Vec<FillResponse>>> {
     let trades = state

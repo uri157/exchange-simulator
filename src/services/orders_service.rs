@@ -81,7 +81,7 @@ impl OrdersService {
             session_id,
             client_order_id,
             symbol: symbol.clone(),
-            side,
+            side: side.clone(),
             order_type,
             price,
             quantity,
@@ -97,7 +97,7 @@ impl OrdersService {
                 let limit_price = order
                     .price
                     .ok_or_else(|| AppError::Validation("limit order requires price".into()))?;
-                if should_fill_limit(side, limit_price, &latest) {
+                if should_fill_limit(&side, limit_price, &latest) {
                     Some(limit_price)
                 } else {
                     None
@@ -184,7 +184,7 @@ impl OrderBookSim for OrdersService {
         self.place_order(
             session_id,
             order.symbol.clone(),
-            order.side,
+            order.side.clone(),
             order.order_type,
             order.quantity,
             order.price,
@@ -198,7 +198,7 @@ impl OrderBookSim for OrdersService {
     }
 }
 
-fn should_fill_limit(side: OrderSide, limit_price: Price, kline: &Kline) -> bool {
+fn should_fill_limit(side: &OrderSide, limit_price: Price, kline: &Kline) -> bool {
     match side {
         OrderSide::Buy => limit_price.0 >= kline.low.0,
         OrderSide::Sell => limit_price.0 <= kline.high.0,
@@ -229,12 +229,12 @@ mod tests {
     fn limit_buy_executes_when_price_below_low() {
         let kline = sample_kline();
         assert!(super::should_fill_limit(
-            OrderSide::Buy,
+            &OrderSide::Buy,
             Price(96.0),
             &kline
         ));
         assert!(!super::should_fill_limit(
-            OrderSide::Buy,
+            &OrderSide::Buy,
             Price(90.0),
             &kline
         ));
@@ -244,12 +244,12 @@ mod tests {
     fn limit_sell_executes_when_price_above_high() {
         let kline = sample_kline();
         assert!(super::should_fill_limit(
-            OrderSide::Sell,
+            &OrderSide::Sell,
             Price(109.0),
             &kline
         ));
         assert!(!super::should_fill_limit(
-            OrderSide::Sell,
+            &OrderSide::Sell,
             Price(120.0),
             &kline
         ));

@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 
-use tracing_subscriber::{EnvFilter, fmt};
+use tokio::net::TcpListener;
+use tracing_subscriber::{fmt, EnvFilter};
 
 use crate::{app::bootstrap::build_app, infra::config::AppConfig};
 
@@ -20,14 +21,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = AppConfig::from_env()?;
     let port = config.port;
-    let router = build_app(config)?;
+    let app = build_app(config)?;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    let listener = TcpListener::bind(addr).await?;
     tracing::info!(%addr, "starting exchange simulator server");
 
-    axum::Server::bind(&addr)
-        .serve(router.into_make_service())
-        .await?;
-
+    axum::serve(listener, app).await?;
     Ok(())
 }
