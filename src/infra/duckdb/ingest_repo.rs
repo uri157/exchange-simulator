@@ -15,6 +15,7 @@ use crate::{
 
 use super::db::DuckDbPool;
 
+#[derive(Clone)]
 pub struct DuckDbIngestRepo {
     pool: DuckDbPool,
 }
@@ -145,11 +146,14 @@ impl MarketIngestor for DuckDbIngestRepo {
             match format {
                 DatasetFormat::Csv => {
                     let import_sql = format!(
-                        "INSERT INTO klines SELECT * FROM read_csv_auto('{}', HEADER TRUE)",
+                        "INSERT OR REPLACE INTO klines(symbol, interval, open_time, open, high, low, close, volume, close_time)
+                         SELECT symbol, interval, open_time, open, high, low, close, volume, close_time
+                         FROM read_csv_auto('{}', HEADER TRUE)",
                         path
                     );
                     conn.execute(&import_sql, [])
                         .map_err(|err| AppError::Database(format!("csv ingest failed: {err}")))?;
+
                     let distinct_sql = format!(
                         "SELECT DISTINCT symbol FROM read_csv_auto('{}', HEADER TRUE)",
                         path
@@ -177,11 +181,14 @@ impl MarketIngestor for DuckDbIngestRepo {
                 }
                 DatasetFormat::Parquet => {
                     let import_sql = format!(
-                        "INSERT INTO klines SELECT * FROM read_parquet('{}')",
+                        "INSERT OR REPLACE INTO klines(symbol, interval, open_time, open, high, low, close, volume, close_time)
+                         SELECT symbol, interval, open_time, open, high, low, close, volume, close_time
+                         FROM read_parquet('{}')",
                         path
                     );
                     conn.execute(&import_sql, [])
                         .map_err(|err| AppError::Database(format!("parquet ingest failed: {err}")))?;
+
                     let distinct_sql = format!(
                         "SELECT DISTINCT symbol FROM read_parquet('{}')",
                         path

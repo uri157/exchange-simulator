@@ -29,32 +29,41 @@ impl DuckDbPool {
         self.with_conn(|conn| {
             conn.execute_batch(
                 r#"
+                -- Core tables
                 CREATE TABLE IF NOT EXISTS symbols(
                     symbol TEXT PRIMARY KEY,
-                    base TEXT NOT NULL,
-                    quote TEXT NOT NULL,
+                    base   TEXT NOT NULL,
+                    quote  TEXT NOT NULL,
                     active BOOLEAN NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS klines(
-                    symbol TEXT NOT NULL,
-                    interval TEXT NOT NULL,
-                    open_time BIGINT NOT NULL,
-                    open DOUBLE NOT NULL,
-                    high DOUBLE NOT NULL,
-                    low DOUBLE NOT NULL,
-                    close DOUBLE NOT NULL,
-                    volume DOUBLE NOT NULL,
+                    symbol     TEXT   NOT NULL,
+                    interval   TEXT   NOT NULL,
+                    open_time  BIGINT NOT NULL,
+                    open       DOUBLE NOT NULL,
+                    high       DOUBLE NOT NULL,
+                    low        DOUBLE NOT NULL,
+                    close      DOUBLE NOT NULL,
+                    volume     DOUBLE NOT NULL,
                     close_time BIGINT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS datasets(
-                    id UUID PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    path TEXT NOT NULL,
-                    format TEXT NOT NULL,
+                    id         UUID   PRIMARY KEY,
+                    name       TEXT   NOT NULL,
+                    path       TEXT   NOT NULL,
+                    format     TEXT   NOT NULL,
                     created_at BIGINT NOT NULL
                 );
+
+                -- Idempotent ingest: avoid duplicates for the same (symbol, interval, open_time)
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_klines_symbol_interval_open
+                    ON klines(symbol, interval, open_time);
+
+                -- Helpful lookup index for symbols (redundant with PK but harmless if PK ignored)
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_symbols_symbol
+                    ON symbols(symbol);
                 "#,
             )
             .map_err(|err| AppError::Database(format!("migration error: {err}")))?;
