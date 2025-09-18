@@ -33,7 +33,7 @@ pub struct AppState {
     pub duck_pool: DuckDbPool,
 }
 
-pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
+pub fn build_app(config: AppConfig) -> Result<axum::Router<AppState>, crate::error::AppError> {
     // Logueamos el path canónico de la DB que vamos a abrir
     info!(duckdb_path = %config.duckdb_path, "opening DuckDB");
 

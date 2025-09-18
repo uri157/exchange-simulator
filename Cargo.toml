@@ -4,14 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = { version = "0.7", features = ["macros", "ws"] }
+# Axum 0.6 (compat con utoipa-swagger-ui v6)
+axum = { version = "0.6", features = ["macros", "ws"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
+
+# tower-http 0.4 (compat axum 0.6)
 tower = "0.4"
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower-http = { version = "0.4", features = ["cors", "trace"] }
+
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 utoipa = { version = "4", features = ["axum_extras", "chrono", "uuid"] }
-utoipa-swagger-ui = { version = "7", features = ["axum"] }
+utoipa-swagger-ui = { version = "6", features = ["axum"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 chrono = { version = "=0.4.31", features = ["serde", "clock"] }
 thiserror = "1"
@@ -26,5 +30,6 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
 anyhow = "1"
 
 [dev-dependencies]
-tokio-tungstenite = { version = "0.21", features = ["rustls-tls-native-roots"] }
+# Compat con axum 0.6/hyper 0.14
+tokio-tungstenite = { version = "0.20", features = ["rustls-tls-native-roots"] }
 tempfile = "3"

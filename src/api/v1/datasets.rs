@@ -1,7 +1,7 @@
 use axum::{
-    Json, Router,
     extract::{Path, State},
-    routing::post,
+    routing::{get, post},
+    Json, Router,
 };
 use tracing::instrument;
 use uuid::Uuid;
@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::{
     api::errors::ApiResult,
     app::bootstrap::AppState,
-    dto::datasets::{DatasetResponse, CreateDatasetRequest},
+    dto::datasets::{CreateDatasetRequest, DatasetResponse},
 };
 
 pub fn router() -> Router<AppState> {
@@ -63,7 +63,7 @@ pub async fn list_datasets(State(state): State<AppState>) -> ApiResult<Json<Vec<
     params(("id" = Uuid, Path, description = "Dataset ID")),
     responses((status = 204))
 )]
-#[instrument(skip(state))]
+#[instrument(skip(state), fields(dataset_id = %id))]
 pub async fn ingest_dataset(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
