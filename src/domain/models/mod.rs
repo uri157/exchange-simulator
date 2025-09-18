@@ -3,7 +3,6 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 pub mod dataset_status;
-pub use dataset_status::DatasetStatus;
 
 use crate::domain::value_objects::{Interval, Price, Quantity, Speed, TimestampMs};
 

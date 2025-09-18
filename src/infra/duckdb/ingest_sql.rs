@@ -1,10 +1,8 @@
 use duckdb::{params, Connection};
+use serde_json::Value;
 use uuid::Uuid;
 
-use crate::{
-    domain::models::DatasetMetadata,
-    error::AppError,
-};
+use crate::{domain::models::DatasetMetadata, error::AppError};
 
 fn infer_base_quote(symbol: &str) -> (String, String) {
     const COMMON_QUOTES: [&str; 5] = ["USDT", "USD", "BUSD", "BTC", "ETH"];
@@ -23,7 +21,13 @@ fn infer_base_quote(symbol: &str) -> (String, String) {
 pub fn insert_symbols_if_needed(conn: &Connection, symbol: &str) -> Result<(), AppError> {
     let (base, quote) = infer_base_quote(symbol);
     conn.execute(
-        "INSERT OR REPLACE INTO symbols(symbol, base, quote, active) VALUES (?1, ?2, ?3, TRUE)",
+        // Upsert explícito con target para evitar Binder Error
+        "INSERT INTO symbols(symbol, base, quote, active)
+         VALUES (?1, ?2, ?3, TRUE)
+         ON CONFLICT(symbol) DO UPDATE SET
+           base = excluded.base,
+           quote = excluded.quote,
+           active = TRUE",
         params![symbol, base, quote],
     )
     .map_err(|e| AppError::Database(format!("insert symbol failed: {e}")))?;
@@ -31,17 +35,18 @@ pub fn insert_symbols_if_needed(conn: &Connection, symbol: &str) -> Result<(), A
 }
 
 /// `rows` es el payload de /api/v3/klines de Binance: Vec<Vec<serde_json::Value>>
-/// Retorna el mayor `close_time` insertado.
+/// Retorna `(max_close_time_del_lote, filas_afectadas_en_total)`.
 pub fn insert_klines_chunk(
     conn: &Connection,
     symbol: &str,
     interval: &str,
-    rows: &[Vec<serde_json::Value>],
-) -> Result<i64, AppError> {
+    rows: &[Vec<Value>],
+) -> Result<(i64, i64), AppError> {
     conn.execute("BEGIN", [])
         .map_err(|e| AppError::Database(format!("begin tx failed: {e}")))?;
 
     let mut last_close_time: i64 = 0;
+    let mut affected_total: i64 = 0;
 
     for row in rows {
         // [0] open_time, [1] open, [2] high, [3] low, [4] close, [5] volume, [6] close_time
@@ -84,23 +89,34 @@ pub fn insert_klines_chunk(
             .and_then(|v| v.as_i64())
             .ok_or_else(|| AppError::External("missing close_time".to_string()))?;
 
-        conn.execute(
-            "INSERT OR REPLACE INTO klines(
-                symbol, interval, open_time, open, high, low, close, volume, close_time
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![
-                symbol,
-                interval,
-                open_time,
-                open,
-                high,
-                low,
-                close,
-                volume,
-                close_time
-            ],
-        )
-        .map_err(|e| AppError::Database(format!("insert kline failed: {e}")))?;
+        // Upsert explícito con conflict target en la clave única (symbol, interval, open_time)
+        let affected = conn
+            .execute(
+                "INSERT INTO klines(
+                    symbol, interval, open_time, open, high, low, close, volume, close_time
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 ON CONFLICT(symbol, interval, open_time) DO UPDATE SET
+                    open  = excluded.open,
+                    high  = excluded.high,
+                    low   = excluded.low,
+                    close = excluded.close,
+                    volume = excluded.volume,
+                    close_time = excluded.close_time",
+                params![
+                    symbol,
+                    interval,
+                    open_time,
+                    open,
+                    high,
+                    low,
+                    close,
+                    volume,
+                    close_time
+                ],
+            )
+            .map_err(|e| AppError::Database(format!("insert kline failed: {e}")))? as i64;
+
+        affected_total += affected;
 
         if close_time > last_close_time {
             last_close_time = close_time;
@@ -110,7 +126,7 @@ pub fn insert_klines_chunk(
     conn.execute("COMMIT", [])
         .map_err(|e| AppError::Database(format!("commit tx failed: {e}")))?;
 
-    Ok(last_close_time)
+    Ok((last_close_time, affected_total))
 }
 
 pub fn mark_dataset_status(conn: &Connection, id: Uuid, status: &str) -> Result<(), AppError> {
@@ -218,4 +234,42 @@ pub fn list_datasets_query(conn: &Connection) -> Result<Vec<DatasetMetadata>, Ap
         });
     }
     Ok(out)
+}
+
+/* =========================
+   Progreso de ingesta (UI)
+   ========================= */
+
+pub fn progress_init(
+    conn: &Connection,
+    dataset_id: Uuid,
+    total: i64,
+    now_ms: i64,
+) -> Result<(), AppError> {
+    conn.execute(
+        "INSERT OR REPLACE INTO dataset_progress(dataset_id, inserted, total, last_close, updated_at)
+         VALUES (?1, 0, ?2, NULL, ?3)",
+        params![dataset_id.to_string(), total, now_ms],
+    )
+    .map_err(|e| AppError::Database(format!("progress init failed: {e}")))?;
+    Ok(())
+}
+
+pub fn progress_upsert_chunk(
+    conn: &Connection,
+    dataset_id: Uuid,
+    inserted_delta: i64,
+    last_close: i64,
+    now_ms: i64,
+) -> Result<(), AppError> {
+    conn.execute(
+        "UPDATE dataset_progress
+           SET inserted = inserted + ?1,
+               last_close = ?2,
+               updated_at = ?3
+         WHERE dataset_id = ?4",
+        params![inserted_delta, last_close, now_ms, dataset_id.to_string()],
+    )
+    .map_err(|e| AppError::Database(format!("progress update failed: {e}")))?;
+    Ok(())
 }

@@ -4,7 +4,7 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
-use tracing::instrument;
+use tracing::{instrument, info, error};
 use uuid::Uuid;
 
 use crate::{
@@ -19,6 +19,7 @@ pub fn router() -> Router {
             "/api/v1/datasets",
             post(register_dataset).get(list_datasets),
         )
+        // Axum usa :id para path params
         .route("/api/v1/datasets/:id/ingest", post(ingest_dataset))
 }
 
@@ -64,13 +65,24 @@ pub async fn list_datasets(
     post,
     path = "/api/v1/datasets/{id}/ingest",
     params(("id" = Uuid, Path, description = "Dataset ID")),
-    responses((status = 204))
+    responses((status = 202))
 )]
 #[instrument(skip(state), fields(dataset_id = %id))]
 pub async fn ingest_dataset(
     Extension(state): Extension<AppState>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
-    state.ingest_service.ingest_dataset(id).await?;
-    Ok(StatusCode::NO_CONTENT)
+    // Disparamos la ingesta en background para evitar timeout del request.
+    let ingest = state.ingest_service.clone();
+    tokio::spawn(async move {
+        info!(%id, "starting dataset ingestion task");
+        if let Err(err) = ingest.ingest_dataset(id).await {
+            error!(%id, error = %err, "dataset ingestion failed");
+        } else {
+            info!(%id, "dataset ingestion finished");
+        }
+    });
+
+    // Respondemos inmediatamente.
+    Ok(StatusCode::ACCEPTED)
 }

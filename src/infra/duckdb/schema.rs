@@ -6,11 +6,6 @@ use crate::error::AppError;
 /// Aplica/asegura el esquema de DuckDB.
 /// Ejecuta cada statement individualmente, ignorando líneas vacías y comentarios.
 pub fn apply_schema(conn: &Connection) -> Result<(), AppError> {
-    // Esquema consistente con la ingesta actual (Binance):
-    // - symbols
-    // - klines
-    // - datasets (symbol/interval/start_time/end_time/source/status/created_at)
-    // - índices útiles
     const SQL: &str = r#"
         -- Core tables
         CREATE TABLE IF NOT EXISTS symbols(
@@ -43,6 +38,15 @@ pub fn apply_schema(conn: &Connection) -> Result<(), AppError> {
             created_at BIGINT NOT NULL
         );
 
+        -- Progreso por dataset (para UI/progreso de ingesta)
+        CREATE TABLE IF NOT EXISTS dataset_progress(
+            dataset_id UUID   PRIMARY KEY,
+            inserted   BIGINT NOT NULL DEFAULT 0,
+            total      BIGINT NOT NULL,
+            last_close BIGINT,
+            updated_at BIGINT NOT NULL
+        );
+
         -- Idempotencia para velas
         CREATE UNIQUE INDEX IF NOT EXISTS ux_klines_symbol_interval_open
             ON klines(symbol, interval, open_time);
@@ -52,13 +56,11 @@ pub fn apply_schema(conn: &Connection) -> Result<(), AppError> {
             ON datasets(symbol, interval);
     "#;
 
-    // Ejecutar statement por statement evitando vacíos/comentarios
     for stmt in SQL.split(';') {
         let s = stmt.trim();
         if s.is_empty() {
             continue;
         }
-        // ignorar líneas que son solo comentarios
         let only_comments = s
             .lines()
             .all(|l| l.trim().is_empty() || l.trim_start().starts_with("--"));
