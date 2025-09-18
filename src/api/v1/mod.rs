@@ -9,6 +9,7 @@ pub mod market_binance;
 pub mod orders;
 pub mod sessions;
 pub mod ws;
+pub mod debug;
 
 pub fn router() -> Router<AppState> {
     Router::new()
