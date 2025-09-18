@@ -1,5 +1,6 @@
 use axum::{
     extract::Path,
+    http::StatusCode,
     routing::{get, post},
     Extension, Json, Router,
 };
@@ -18,7 +19,8 @@ pub fn router() -> Router {
             "/api/v1/datasets",
             post(register_dataset).get(list_datasets),
         )
-        .route("/api/v1/datasets/{id}/ingest", post(ingest_dataset))
+        // Axum usa `:id` (no `{id}`)
+        .route("/api/v1/datasets/:id/ingest", post(ingest_dataset))
 }
 
 #[utoipa::path(
@@ -69,7 +71,7 @@ pub async fn list_datasets(
 pub async fn ingest_dataset(
     Extension(state): Extension<AppState>,
     Path(id): Path<Uuid>,
-) -> ApiResult<axum::http::StatusCode> {
+) -> ApiResult<StatusCode> {
     state.ingest_service.ingest_dataset(id).await?;
-    Ok(axum::http::StatusCode::NO_CONTENT)
+    Ok(StatusCode::NO_CONTENT)
 }

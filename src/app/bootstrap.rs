@@ -14,9 +14,8 @@ use crate::{
         ws::broadcaster::SessionBroadcaster,
     },
     services::{
-        account_service::AccountService, IngestService,
-        market_service::MarketService, orders_service::OrdersService,
-        replay_service::ReplayService, sessions_service::SessionsService,
+        account_service::AccountService, market_service::MarketService, orders_service::OrdersService,
+        replay_service::ReplayService, sessions_service::SessionsService, IngestService,
     },
 };
 
@@ -87,11 +86,8 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
     ));
     let replay_engine: Arc<dyn crate::domain::traits::ReplayEngine> = replay_service.clone();
 
-    let account_service = Arc::new(AccountService::new(
-        accounts_repo.clone(),
-        "USDT".to_string(),
-        10_000.0,
-    ));
+    let account_service =
+        Arc::new(AccountService::new(accounts_repo.clone(), "USDT".to_string(), 10_000.0));
 
     let orders_service = Arc::new(OrdersService::new(
         orders_repo.clone(),
@@ -100,13 +96,10 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
         replay_service.clone(),
     ));
 
-    let sessions_service = Arc::new(SessionsService::new(
-        sessions_repo.clone(),
-        clock_trait.clone(),
-        replay_engine.clone(),
-    ));
+    let sessions_service =
+        Arc::new(SessionsService::new(sessions_repo.clone(), clock_trait.clone(), replay_engine));
 
-    let state = super::bootstrap::AppState {
+    let state = AppState {
         config: config.clone(),
         market_service,
         ingest_service,
