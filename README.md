@@ -313,7 +313,4 @@ src/
 
 
 
-Estos:
-
-* `src/main.rs` — uso de `app.into_make_service()` (sólo para confirmar que compila tras los bounds).
-
+src/api/v1/datasets.rs

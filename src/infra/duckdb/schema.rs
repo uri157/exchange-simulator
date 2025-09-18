@@ -47,10 +47,6 @@ pub fn apply_schema(conn: &Connection) -> Result<(), AppError> {
         CREATE UNIQUE INDEX IF NOT EXISTS ux_klines_symbol_interval_open
             ON klines(symbol, interval, open_time);
 
-        -- Lookup símbolo
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_symbols_symbol
-            ON symbols(symbol);
-
         -- Búsquedas típicas por datasets
         CREATE INDEX IF NOT EXISTS ix_datasets_symbol_interval
             ON datasets(symbol, interval);

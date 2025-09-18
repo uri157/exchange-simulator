@@ -1,9 +1,7 @@
 use reqwest::Client;
+use serde_json::Value;
 
-use crate::{
-    domain::models::DatasetMetadata,
-    error::AppError,
-};
+use crate::{domain::models::DatasetMetadata, error::AppError};
 
 use super::{db::DuckDbPool, ingest_sql};
 
@@ -13,7 +11,7 @@ pub async fn run_ingest(pool: &DuckDbPool, meta: &DatasetMetadata) -> Result<boo
     let client = Client::builder()
         .user_agent("exchange-simulator/ingest-runner")
         .build()
-        .expect("reqwest client");
+        .map_err(|e| AppError::External(format!("reqwest client build failed: {e}")))?;
 
     let base = "https://api.binance.com/api/v3/klines";
     let mut from = meta.start_time;
@@ -39,7 +37,7 @@ pub async fn run_ingest(pool: &DuckDbPool, meta: &DatasetMetadata) -> Result<boo
             )));
         }
 
-        let chunk: Vec<Vec<serde_json::Value>> = resp
+        let chunk: Vec<Vec<Value>> = resp
             .json()
             .await
             .map_err(|e| AppError::External(format!("binance parse failed: {e}")))?;

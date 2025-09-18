@@ -1,9 +1,7 @@
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::{
-    domain::{models::DatasetMetadata, traits::MarketIngestor},
-};
+use crate::domain::{models::DatasetMetadata, traits::MarketIngestor};
 use super::ServiceResult;
 
 #[derive(Clone)]

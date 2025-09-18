@@ -19,7 +19,6 @@ pub fn router() -> Router {
             "/api/v1/datasets",
             post(register_dataset).get(list_datasets),
         )
-        // Axum usa `:id` (no `{id}`)
         .route("/api/v1/datasets/:id/ingest", post(ingest_dataset))
 }
 

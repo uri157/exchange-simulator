@@ -1,4 +1,5 @@
 use uuid::Uuid;
+use chrono::Utc;
 
 use crate::{
     domain::{models::DatasetMetadata, traits::MarketIngestor},
@@ -44,7 +45,7 @@ impl MarketIngestor for DuckDbIngestRepo {
             start_time,
             end_time,
             status: "registered".to_string(),
-            created_at: chrono::Utc::now().timestamp_millis(),
+            created_at: Utc::now().timestamp_millis(),
         };
 
         let meta_for_insert = meta.clone();

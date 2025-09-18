@@ -37,19 +37,24 @@ impl MarketStore for DuckDbMarketStore {
                 .next()
                 .map_err(|err| AppError::Database(format!("rows iteration failed: {err}")))?
             {
+                let symbol: String = row
+                    .get(0)
+                    .map_err(|err| AppError::Database(format!("row column error: {err}")))?;
+                let base: String = row
+                    .get(1)
+                    .map_err(|err| AppError::Database(format!("row column error: {err}")))?;
+                let quote: String = row
+                    .get(2)
+                    .map_err(|err| AppError::Database(format!("row column error: {err}")))?;
+                let active: bool = row
+                    .get(3)
+                    .map_err(|err| AppError::Database(format!("row column error: {err}")))?;
+
                 out.push(Symbol {
-                    symbol: row
-                        .get(0)
-                        .map_err(|err| AppError::Database(format!("row column error: {err}")))?,
-                    base: row
-                        .get(1)
-                        .map_err(|err| AppError::Database(format!("row column error: {err}")))?,
-                    quote: row
-                        .get(2)
-                        .map_err(|err| AppError::Database(format!("row column error: {err}")))?,
-                    active: row
-                        .get(3)
-                        .map_err(|err| AppError::Database(format!("row column error: {err}")))?,
+                    symbol,
+                    base,
+                    quote,
+                    active,
                 });
             }
             Ok(out)
@@ -89,34 +94,44 @@ impl MarketStore for DuckDbMarketStore {
                 .next()
                 .map_err(|err| AppError::Database(format!("row iteration failed: {err}")))?
             {
+                let symbol: String = row
+                    .get(0)
+                    .map_err(|err| AppError::Database(format!("row column error: {err}")))?;
+                let interval_str: String = row
+                    .get(1)
+                    .map_err(|err| AppError::Database(format!("row column error: {err}")))?;
+                let open_time: i64 = row
+                    .get(2)
+                    .map_err(|err| AppError::Database(format!("row column error: {err}")))?;
+                let open: f64 = row
+                    .get(3)
+                    .map_err(|err| AppError::Database(format!("row column error: {err}")))?;
+                let high: f64 = row
+                    .get(4)
+                    .map_err(|err| AppError::Database(format!("row column error: {err}")))?;
+                let low: f64 = row
+                    .get(5)
+                    .map_err(|err| AppError::Database(format!("row column error: {err}")))?;
+                let close: f64 = row
+                    .get(6)
+                    .map_err(|err| AppError::Database(format!("row column error: {err}")))?;
+                let volume: f64 = row
+                    .get(7)
+                    .map_err(|err| AppError::Database(format!("row column error: {err}")))?;
+                let close_time: i64 = row
+                    .get(8)
+                    .map_err(|err| AppError::Database(format!("row column error: {err}")))?;
+
                 out.push(Kline {
-                    symbol: row
-                        .get(0)
-                        .map_err(|err| AppError::Database(format!("row column error: {err}")))?,
-                    interval: Interval::new(row
-                        .get::<_, String>(1)
-                        .map_err(|err| AppError::Database(format!("row column error: {err}")))?),
-                    open_time: TimestampMs(row
-                        .get::<_, i64>(2)
-                        .map_err(|err| AppError::Database(format!("row column error: {err}")))?),
-                    open: Price(row
-                        .get::<_, f64>(3)
-                        .map_err(|err| AppError::Database(format!("row column error: {err}")))?),
-                    high: Price(row
-                        .get::<_, f64>(4)
-                        .map_err(|err| AppError::Database(format!("row column error: {err}")))?),
-                    low: Price(row
-                        .get::<_, f64>(5)
-                        .map_err(|err| AppError::Database(format!("row column error: {err}")))?),
-                    close: Price(row
-                        .get::<_, f64>(6)
-                        .map_err(|err| AppError::Database(format!("row column error: {err}")))?),
-                    volume: Quantity(row
-                        .get::<_, f64>(7)
-                        .map_err(|err| AppError::Database(format!("row column error: {err}")))?),
-                    close_time: TimestampMs(row
-                        .get::<_, i64>(8)
-                        .map_err(|err| AppError::Database(format!("row column error: {err}")))?),
+                    symbol,
+                    interval: Interval::new(&interval_str),
+                    open_time: TimestampMs(open_time),
+                    open: Price(open),
+                    high: Price(high),
+                    low: Price(low),
+                    close: Price(close),
+                    volume: Quantity(volume),
+                    close_time: TimestampMs(close_time),
                 });
             }
             Ok(out)
