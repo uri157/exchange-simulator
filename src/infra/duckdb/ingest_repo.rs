@@ -7,8 +7,8 @@ use crate::{
 
 use super::{
     db::DuckDbPool,
-    duckdb::ingest_sql,        // helpers de SQL (insert/select/update/list)
-    duckdb::ingest_runner,     // orquestador de descarga+ingesta
+    ingest_runner, // orquestador de descarga+ingesta
+    ingest_sql,    // helpers de SQL (insert/select/update/list)
 };
 
 #[derive(Clone)]
@@ -47,9 +47,10 @@ impl MarketIngestor for DuckDbIngestRepo {
             created_at: chrono::Utc::now().timestamp_millis(),
         };
 
+        let meta_for_insert = meta.clone();
         let pool = self.pool.clone();
         pool.with_conn_async(move |conn| {
-            ingest_sql::insert_dataset_row(conn, &meta)?;
+            ingest_sql::insert_dataset_row(conn, &meta_for_insert)?;
             Ok::<_, AppError>(())
         })
         .await?;
@@ -67,8 +68,8 @@ impl MarketIngestor for DuckDbIngestRepo {
         let (symbol, interval, start_time, end_time) = {
             let pool = self.pool.clone();
             pool.with_conn_async({
-                let dataset_id = dataset_id.to_string();
-                move |conn| ingest_sql::select_dataset_meta(conn, &dataset_id)
+                let dataset_id = dataset_id;
+                move |conn| ingest_sql::select_dataset_meta(conn, dataset_id)
             })
             .await?
         };
@@ -87,8 +88,8 @@ impl MarketIngestor for DuckDbIngestRepo {
         {
             let pool = self.pool.clone();
             pool.with_conn_async({
-                let id = dataset_id.to_string();
-                move |conn| ingest_sql::mark_dataset_status(conn, &id, "ingesting")
+                let id = dataset_id;
+                move |conn| ingest_sql::mark_dataset_status(conn, id, "ingesting")
             })
             .await?;
         }
@@ -100,9 +101,9 @@ impl MarketIngestor for DuckDbIngestRepo {
         let final_status = if inserted_any { "ready" } else { "failed" };
         let pool = self.pool.clone();
         pool.with_conn_async({
-            let id = dataset_id.to_string();
+            let id = dataset_id;
             let status = final_status.to_string();
-            move |conn| ingest_sql::mark_dataset_status(conn, &id, &status)
+            move |conn| ingest_sql::mark_dataset_status(conn, id, &status)
         })
         .await?;
 
