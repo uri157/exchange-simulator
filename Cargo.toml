@@ -4,18 +4,20 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Axum 0.6 (compat con utoipa-swagger-ui v6)
-axum = { version = "0.6", features = ["macros", "ws"] }
+# Axum 0.6 (alineado con hyper 0.14)
+axum = { version = "=0.6.20", features = ["macros", "ws"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
 
 # tower-http 0.4 (compat axum 0.6)
 tower = "0.4"
-tower-http = { version = "0.4", features = ["cors", "trace"] }
+tower-http = { version = "=0.4.4", features = ["cors", "trace"] }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-utoipa = { version = "4", features = ["axum_extras", "chrono", "uuid"] }
-utoipa-swagger-ui = { version = "6", features = ["axum"] }
+
+# Utoipa v4 (OpenAPI)
+utoipa = { version = "=4.2.3", features = ["axum_extras", "chrono", "uuid"] }
+
 uuid = { version = "1", features = ["serde", "v4"] }
 chrono = { version = "=0.4.31", features = ["serde", "clock"] }
 thiserror = "1"
@@ -26,7 +28,10 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 indexmap = { version = "2", features = ["serde"] }
 parking_lot = "0.12"
 async-trait = "0.1"
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+
+# Cliente HTTP moderno (independiente del servidor)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
 anyhow = "1"
 
 [dev-dependencies]

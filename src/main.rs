@@ -20,11 +20,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // config y router
     let config = AppConfig::from_env()?;
-    let port = config.port;
-    let app = build_app(config)?; // -> axum 0.6: Router (con estado via .with_state(...))
+    let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
+    let app = build_app(config)?; // Router<AppState> (axum 0.6)
 
-    // en axum 0.6 se usa Server::bind(...).serve(app.into_make_service())
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    // axum 0.6 + hyper 0.14
     tracing::info!(%addr, "starting exchange simulator server");
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
