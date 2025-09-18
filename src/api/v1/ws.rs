@@ -1,23 +1,23 @@
 use axum::{
-    Router,
     extract::{
-        Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
+        Query,
     },
     response::IntoResponse,
     routing::get,
+    Extension, Router,
 };
 use tracing::{error, instrument};
 
 use crate::{app::bootstrap::AppState, dto::ws::WsQuery};
 
-pub fn router() -> Router<AppState> {
+pub fn router() -> Router {
     Router::new().route("/ws", get(ws_handler))
 }
 
 #[instrument(skip(state, ws, query))]
 pub async fn ws_handler(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Query(query): Query<WsQuery>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {

@@ -1,7 +1,5 @@
 use axum::Router;
 
-use crate::app::bootstrap::AppState;
-
 pub mod account;
 pub mod datasets;
 pub mod market;
@@ -11,7 +9,7 @@ pub mod sessions;
 pub mod ws;
 pub mod debug;
 
-pub fn router() -> Router<AppState> {
+pub fn router() -> Router {
     Router::new()
         .merge(market::router())
         .merge(market_binance::router())

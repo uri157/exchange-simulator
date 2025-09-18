@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::{extension::Extension, Router};
+use axum::{Extension, Router};
 use tracing::{info, warn};
 
 use crate::{
@@ -119,7 +119,5 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
     };
 
     // Router stateless + estado por Extension
-    let app = create_router().layer(Extension(state));
-
-    Ok(app)
+    Ok(create_router().layer(Extension(state)))
 }

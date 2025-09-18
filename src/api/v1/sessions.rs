@@ -1,7 +1,7 @@
 use axum::{
-    Json, Router,
-    extract::{Path, Query, State},
+    extract::{Path, Query},
     routing::{get, post},
+    Extension, Json, Router,
 };
 use std::str::FromStr;
 use tracing::instrument;
@@ -14,7 +14,7 @@ use crate::{
     dto::sessions::{CreateSessionRequest, SessionResponse},
 };
 
-pub fn router() -> Router<AppState> {
+pub fn router() -> Router {
     Router::new()
         .route("/api/v1/sessions", post(create_session).get(list_sessions))
         .route("/api/v1/sessions/{id}", get(get_session))
@@ -32,7 +32,7 @@ pub fn router() -> Router<AppState> {
 )]
 #[instrument(skip(state, payload))]
 pub async fn create_session(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Json(payload): Json<CreateSessionRequest>,
 ) -> ApiResult<Json<SessionResponse>> {
     let interval = Interval::from_str(&payload.interval)?;
@@ -60,7 +60,9 @@ pub async fn create_session(
     responses((status = 200, body = Vec<SessionResponse>))
 )]
 #[instrument(skip(state))]
-pub async fn list_sessions(State(state): State<AppState>) -> ApiResult<Json<Vec<SessionResponse>>> {
+pub async fn list_sessions(
+    Extension(state): Extension<AppState>,
+) -> ApiResult<Json<Vec<SessionResponse>>> {
     let sessions = state.sessions_service.list_sessions().await?;
     Ok(Json(
         sessions.into_iter().map(SessionResponse::from).collect(),
@@ -75,7 +77,7 @@ pub async fn list_sessions(State(state): State<AppState>) -> ApiResult<Json<Vec<
 )]
 #[instrument(skip(state))]
 pub async fn get_session(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<SessionResponse>> {
     let session = state.sessions_service.get_session(id).await?;
@@ -90,7 +92,7 @@ pub async fn get_session(
 )]
 #[instrument(skip(state))]
 pub async fn start_session(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<SessionResponse>> {
     let session = state.sessions_service.start_session(id).await?;
@@ -105,7 +107,7 @@ pub async fn start_session(
 )]
 #[instrument(skip(state))]
 pub async fn pause_session(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<SessionResponse>> {
     let session = state.sessions_service.pause_session(id).await?;
@@ -120,7 +122,7 @@ pub async fn pause_session(
 )]
 #[instrument(skip(state))]
 pub async fn resume_session(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<SessionResponse>> {
     let session = state.sessions_service.resume_session(id).await?;
@@ -144,7 +146,7 @@ struct SeekQuery {
 )]
 #[instrument(skip(state, query))]
 pub async fn seek_session(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Path(id): Path<Uuid>,
     Query(query): Query<SeekQuery>,
 ) -> ApiResult<Json<SessionResponse>> {

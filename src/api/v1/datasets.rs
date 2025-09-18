@@ -1,7 +1,7 @@
 use axum::{
-    extract::{Path, State},
+    extract::Path,
     routing::{get, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use tracing::instrument;
 use uuid::Uuid;
@@ -12,7 +12,7 @@ use crate::{
     dto::datasets::{CreateDatasetRequest, DatasetResponse},
 };
 
-pub fn router() -> Router<AppState> {
+pub fn router() -> Router {
     Router::new()
         .route(
             "/api/v1/datasets",
@@ -29,7 +29,7 @@ pub fn router() -> Router<AppState> {
 )]
 #[instrument(skip(state, payload))]
 pub async fn register_dataset(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Json(payload): Json<CreateDatasetRequest>,
 ) -> ApiResult<Json<DatasetResponse>> {
     let dataset = state
@@ -50,7 +50,9 @@ pub async fn register_dataset(
     responses((status = 200, body = Vec<DatasetResponse>))
 )]
 #[instrument(skip(state))]
-pub async fn list_datasets(State(state): State<AppState>) -> ApiResult<Json<Vec<DatasetResponse>>> {
+pub async fn list_datasets(
+    Extension(state): Extension<AppState>,
+) -> ApiResult<Json<Vec<DatasetResponse>>> {
     let datasets = state.ingest_service.list_datasets().await?;
     Ok(Json(
         datasets.into_iter().map(DatasetResponse::from).collect(),
@@ -65,7 +67,7 @@ pub async fn list_datasets(State(state): State<AppState>) -> ApiResult<Json<Vec<
 )]
 #[instrument(skip(state), fields(dataset_id = %id))]
 pub async fn ingest_dataset(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<axum::http::StatusCode> {
     state.ingest_service.ingest_dataset(id).await?;

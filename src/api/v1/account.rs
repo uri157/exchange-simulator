@@ -1,4 +1,4 @@
-use axum::{Json, Router, extract::{Query, State}, routing::get};
+use axum::{Extension, Json, Router, extract::Query, routing::get};
 use tracing::instrument;
 
 use crate::{
@@ -7,7 +7,7 @@ use crate::{
     dto::account::{AccountQuery, AccountResponse},
 };
 
-pub fn router() -> Router<AppState> {
+pub fn router() -> Router {
     Router::new().route("/api/v3/account", get(get_account))
 }
 
@@ -19,7 +19,7 @@ pub fn router() -> Router<AppState> {
 )]
 #[instrument(skip(state, params))]
 pub async fn get_account(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Query(params): Query<AccountQuery>,
 ) -> ApiResult<Json<AccountResponse>> {
     state
