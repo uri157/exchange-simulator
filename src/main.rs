@@ -21,12 +21,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // config y router
     let config = AppConfig::from_env()?;
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
-    let app = build_app(config)?; // Router<AppState> (axum 0.6)
+    let app = build_app(config)?; // -> Router<()> con Extension(AppState) ya aplicada
 
     // axum 0.6 + hyper 0.14
     tracing::info!(%addr, "starting exchange simulator server");
     axum::Server::bind(&addr)
-        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+        .serve(app.into_make_service()) // <- ahora compila
         .await?;
 
     Ok(())

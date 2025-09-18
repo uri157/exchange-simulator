@@ -1,12 +1,9 @@
 use std::sync::Arc;
 
-use crate::{
-    domain::{
-        models::Kline,
-        traits::MarketStore,
-        value_objects::{Interval, TimestampMs},
-    },
-    error::AppError,
+use crate::domain::{
+    models::{Kline, Symbol},
+    traits::MarketStore,
+    value_objects::{Interval, TimestampMs},
 };
 
 use super::ServiceResult;
@@ -20,7 +17,7 @@ impl MarketService {
         Self { store }
     }
 
-    pub async fn exchange_info(&self) -> Result<Vec<crate::domain::models::Symbol>, AppError> {
+    pub async fn exchange_info(&self) -> ServiceResult<Vec<Symbol>> {
         self.store.list_symbols().await
     }
 

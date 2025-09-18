@@ -2,12 +2,15 @@ use axum::{routing::get, Json, Router};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use utoipa::OpenApi;
 
-use crate::{api, app::bootstrap::AppState, oas::ApiDoc};
+use crate::{api, oas::ApiDoc};
 
-pub fn create_router(state: AppState) -> Router<AppState> {
+/// Devuelve `Router<()>` (sin estado).
+/// El estado se inyecta via `Extension` en `build_app`.
+pub fn create_router() -> Router {
     let openapi = ApiDoc::openapi();
 
     Router::new()
+        // Sirve el JSON de OpenAPI (sin Swagger UI)
         .route(
             "/api-docs/openapi.json",
             get({
@@ -15,9 +18,8 @@ pub fn create_router(state: AppState) -> Router<AppState> {
                 move || async { Json(openapi) }
             }),
         )
-        .route("/ping", get(api::errors::ping))
-        .merge(api::v1::router())
+        .route("/ping", get(crate::api::errors::ping))
+        .merge(api::v1::router()) // <-- Asegurate que este también devuelva Router (stateless)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .with_state(state)
 }

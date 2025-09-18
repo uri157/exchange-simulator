@@ -299,3 +299,21 @@ src/
 ---
 
 ¡Listo! Con este README cualquier IA (y humana) entiende el contexto, puede levantar el proyecto, ingerir datos, crear sesiones y empezar a probar bots.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Estos:
+
+* `src/main.rs` — uso de `app.into_make_service()` (sólo para confirmar que compila tras los bounds).
+

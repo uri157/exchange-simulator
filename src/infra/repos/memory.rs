@@ -1,3 +1,4 @@
+// src/infra/repos/memory.rs
 use std::collections::HashMap;
 
 use chrono::Utc;
@@ -106,7 +107,11 @@ impl OrdersRepo for MemoryOrdersRepo {
             .ok_or_else(|| AppError::NotFound(format!("order {order_id} not found")))
     }
 
-    async fn get_by_client_id(&self, session_id: Uuid, client_id: &str) -> Result<Order, AppError> {
+    async fn get_by_client_id(
+        &self,
+        session_id: Uuid,
+        client_id: &str,
+    ) -> Result<Order, AppError> {
         let guard = self.inner.read().await;
         let session_orders = guard
             .get(&session_id)
@@ -131,12 +136,7 @@ impl OrdersRepo for MemoryOrdersRepo {
             .ok_or_else(|| AppError::NotFound(format!("session {session_id} not found")))?;
         let mut out: Vec<Order> = session_orders
             .values()
-            .filter(|order| {
-                matches!(
-                    order.status,
-                    OrderStatus::New | OrderStatus::PartiallyFilled
-                )
-            })
+            .filter(|order| matches!(order.status, OrderStatus::New | OrderStatus::PartiallyFilled))
             .cloned()
             .collect();
         if let Some(symbol) = symbol {

@@ -61,10 +61,11 @@ impl AccountService {
     ) -> ServiceResult<AccountSnapshot> {
         let mut snapshot = self.repo.get_account(session_id).await?;
         let (base, quote) = split_symbol(symbol, &self.default_quote);
+
         let mut balances: IndexMap<String, Balance> = snapshot
             .balances
             .into_iter()
-            .map(|balance| (balance.asset.clone(), balance))
+            .map(|b| (b.asset.clone(), b))
             .collect();
 
         let trade_value = price.0 * quantity.0;
@@ -73,7 +74,7 @@ impl AccountService {
             OrderSide::Buy => {
                 // quote --
                 {
-                    let q = balances.entry(quote.clone()).or_insert(Balance {
+                    let q = balances.entry(quote.clone()).or_insert_with(|| Balance {
                         asset: quote.clone(),
                         free: Quantity::default(),
                         locked: Quantity::default(),
@@ -82,7 +83,7 @@ impl AccountService {
                 }
                 // base ++
                 {
-                    let b = balances.entry(base.clone()).or_insert(Balance {
+                    let b = balances.entry(base.clone()).or_insert_with(|| Balance {
                         asset: base.clone(),
                         free: Quantity::default(),
                         locked: Quantity::default(),
@@ -93,7 +94,7 @@ impl AccountService {
             OrderSide::Sell => {
                 // base --
                 {
-                    let b = balances.entry(base.clone()).or_insert(Balance {
+                    let b = balances.entry(base.clone()).or_insert_with(|| Balance {
                         asset: base.clone(),
                         free: Quantity::default(),
                         locked: Quantity::default(),
@@ -102,7 +103,7 @@ impl AccountService {
                 }
                 // quote ++
                 {
-                    let q = balances.entry(quote.clone()).or_insert(Balance {
+                    let q = balances.entry(quote.clone()).or_insert_with(|| Balance {
                         asset: quote.clone(),
                         free: Quantity::default(),
                         locked: Quantity::default(),
@@ -112,7 +113,7 @@ impl AccountService {
             }
         }
 
-        snapshot.balances = balances.into_iter().map(|(_, balance)| balance).collect();
+        snapshot.balances = balances.into_iter().map(|(_, b)| b).collect();
         self.repo.save_account(snapshot.clone()).await?;
         Ok(snapshot)
     }
@@ -120,13 +121,15 @@ impl AccountService {
 
 fn split_symbol(symbol: &str, default_quote: &str) -> (String, String) {
     const COMMON_QUOTES: [&str; 6] = ["USDT", "USD", "BUSD", "USDC", "BTC", "ETH"];
+
     for quote in COMMON_QUOTES.iter().chain(std::iter::once(&default_quote)) {
-        if let Some(base) = symbol.strip_suffix(quote) {
+        if let Some(base) = symbol.strip_suffix(*quote) {
             if !base.is_empty() {
                 return (base.to_string(), (*quote).to_string());
             }
         }
     }
+
     let split = symbol.len() / 2;
     (symbol[..split].to_string(), symbol[split..].to_string())
 }

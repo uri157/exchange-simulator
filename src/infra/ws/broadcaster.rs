@@ -1,20 +1,21 @@
-use std::collections::HashMap;
+// src/infra/ws/broadcaster.rs
+use std::{collections::HashMap, sync::Arc};
 
-use tokio::sync::{RwLock, broadcast};
+use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
 use crate::error::AppError;
 
 #[derive(Clone)]
 pub struct SessionBroadcaster {
-    inner: std::sync::Arc<RwLock<HashMap<Uuid, broadcast::Sender<String>>>>,
+    inner: Arc<RwLock<HashMap<Uuid, broadcast::Sender<String>>>>,
     buffer: usize,
 }
 
 impl SessionBroadcaster {
     pub fn new(buffer: usize) -> Self {
         Self {
-            inner: std::sync::Arc::new(RwLock::new(HashMap::new())),
+            inner: Arc::new(RwLock::new(HashMap::new())),
             buffer,
         }
     }

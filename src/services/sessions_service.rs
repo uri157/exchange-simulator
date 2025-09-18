@@ -40,6 +40,7 @@ impl SessionsService {
         seed: u64,
     ) -> ServiceResult<SessionConfig> {
         speed.validate()?;
+
         if symbols.is_empty() {
             return Err(crate::error::AppError::Validation(
                 "at least one symbol is required".into(),
@@ -50,8 +51,10 @@ impl SessionsService {
                 "end_time must be greater than start_time".into(),
             ));
         }
+
         let session_id = Uuid::new_v4();
         let now = TimestampMs::from(Utc::now().timestamp_millis());
+
         let config = SessionConfig {
             session_id,
             symbols,
@@ -65,8 +68,12 @@ impl SessionsService {
             updated_at: now,
         };
 
-        // Persist first, then position the clock at the session start.
+        // Persist first
         let inserted = self.sessions_repo.insert(config.clone()).await?;
+
+        // Ensure the clock has a slot for this session and position it at start_time
+        // (init is a no-op for clocks that don't need pre-initialization).
+        let _ = self.clock.init_session(session_id, start_time).await;
         self.clock.advance_to(session_id, start_time).await?;
 
         Ok(inserted)
@@ -91,7 +98,6 @@ impl SessionsService {
     }
 
     pub async fn resume_session(&self, session_id: Uuid) -> ServiceResult<SessionConfig> {
-        let session = self.sessions_repo.get(session_id).await?;
         self.clock.resume(session_id).await?;
         self.replay.resume(session_id).await?;
         self.sessions_repo

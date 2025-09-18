@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::Router;
+use axum::{extension::Extension, Router};
 use tracing::{info, warn};
 
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
         ws::broadcaster::SessionBroadcaster,
     },
     services::{
-        account_service::AccountService, IngestService, // ← re-export
+        account_service::AccountService, IngestService,
         market_service::MarketService, orders_service::OrdersService,
         replay_service::ReplayService, sessions_service::SessionsService,
     },
@@ -33,15 +33,15 @@ pub struct AppState {
     pub duck_pool: DuckDbPool,
 }
 
-pub fn build_app(config: AppConfig) -> Result<axum::Router<AppState>, crate::error::AppError> {
-    // Logueamos el path canónico de la DB que vamos a abrir
+/// Devuelve `Router<()>` con `Extension(AppState)` ya añadida.
+/// Así `main` puede usar `.into_make_service()` sin problemas.
+pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
     info!(duckdb_path = %config.duckdb_path, "opening DuckDB");
-
     let pool = DuckDbPool::new(&config.duckdb_path)?;
 
-    // Pequeño warmup + métricas básicas para confirmar que miramos la misma DB
+    // Warmup / métricas básicas (opcional)
     match pool.with_conn(|conn| {
-        let mut count = |table: &str| -> Result<i64, crate::error::AppError> {
+        let count = |table: &str| -> Result<i64, crate::error::AppError> {
             let mut stmt = conn
                 .prepare(&format!("SELECT COUNT(*) FROM {}", table))
                 .map_err(|e| crate::error::AppError::Database(format!("prepare count {}: {e}", table)))?;
@@ -57,20 +57,13 @@ pub fn build_app(config: AppConfig) -> Result<axum::Router<AppState>, crate::err
                 .map_err(|e| crate::error::AppError::Database(format!("get count {}: {e}", table)))?;
             Ok(n)
         };
-
-        let ds = count("datasets")?;
-        let kl = count("klines")?;
-        let sy = count("symbols")?;
-        Ok::<_, crate::error::AppError>((ds, kl, sy))
+        Ok::<_, crate::error::AppError>((count("datasets")?, count("klines")?, count("symbols")?))
     }) {
-        Ok((ds, kl, sy)) => {
-            info!(datasets = ds, klines = kl, symbols = sy, "duckdb warmup");
-        }
-        Err(err) => {
-            warn!(error = %err, "duckdb warmup failed (continuing)");
-        }
+        Ok((ds, kl, sy)) => info!(datasets = ds, klines = kl, symbols = sy, "duckdb warmup"),
+        Err(err) => warn!(error = %err, "duckdb warmup failed (continuing)"),
     }
 
+    // Servicios
     let market_store: Arc<dyn MarketStore> = Arc::new(DuckDbMarketStore::new(pool.clone()));
     let market_service = Arc::new(MarketService::new(market_store.clone()));
 
@@ -92,7 +85,6 @@ pub fn build_app(config: AppConfig) -> Result<axum::Router<AppState>, crate::err
         sessions_repo.clone(),
         broadcaster.clone(),
     ));
-
     let replay_engine: Arc<dyn crate::domain::traits::ReplayEngine> = replay_service.clone();
 
     let account_service = Arc::new(AccountService::new(
@@ -114,7 +106,7 @@ pub fn build_app(config: AppConfig) -> Result<axum::Router<AppState>, crate::err
         replay_engine.clone(),
     ));
 
-    let state = AppState {
+    let state = super::bootstrap::AppState {
         config: config.clone(),
         market_service,
         ingest_service,
@@ -126,5 +118,8 @@ pub fn build_app(config: AppConfig) -> Result<axum::Router<AppState>, crate::err
         duck_pool: pool.clone(),
     };
 
-    Ok(create_router(state))
+    // Router stateless + estado por Extension
+    let app = create_router().layer(Extension(state));
+
+    Ok(app)
 }

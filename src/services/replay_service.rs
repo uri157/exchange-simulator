@@ -61,7 +61,9 @@ impl ReplayService {
         if session.start_time.0 > from.0 {
             session.start_time = from;
         }
+
         info!(session_id = %session.session_id, "starting replay session");
+
         if let Err(err) = self
             .sessions_repo
             .update_status(session.session_id, SessionStatus::Running)
@@ -69,6 +71,7 @@ impl ReplayService {
         {
             error!(%err, "failed to set running status");
         }
+
         let mut timeline = Vec::new();
         for symbol in &session.symbols {
             match self
@@ -86,27 +89,31 @@ impl ReplayService {
                 }
             }
         }
+
         timeline.sort_by_key(|(_, kline)| kline.open_time.0);
+
         let mut previous = from;
         for (symbol, kline) in timeline {
             if kline.open_time.0 > session.end_time.0 {
                 break;
             }
+
+            // Esperar si está pausado
             loop {
                 match self.clock.is_paused(session.session_id).await {
-                    Ok(paused) => {
-                        if paused {
-                            sleep(Duration::from_millis(50)).await;
-                            continue;
-                        }
+                    Ok(paused) if paused => {
+                        sleep(Duration::from_millis(50)).await;
+                        continue;
                     }
+                    Ok(_) => break,
                     Err(err) => {
                         error!(%err, "clock lookup failed");
                         return;
                     }
                 }
-                break;
             }
+
+            // Escalar el tiempo según la velocidad
             let speed = match self.clock.current_speed(session.session_id).await {
                 Ok(speed) => speed,
                 Err(err) => {
@@ -114,12 +121,14 @@ impl ReplayService {
                     break;
                 }
             };
+
             let delta = kline.open_time.0.saturating_sub(previous.0);
             if delta > 0 {
                 let scaled = (delta as f64) / speed.0;
                 let delay = Duration::from_millis(scaled.max(1.0) as u64);
                 sleep(delay).await;
             }
+
             if let Err(err) = self
                 .clock
                 .advance_to(session.session_id, kline.close_time)
@@ -127,10 +136,12 @@ impl ReplayService {
             {
                 error!(%err, "clock advance failed");
             }
+
             {
                 let mut guard = self.latest.write().await;
                 guard.insert((session.session_id, symbol.clone()), kline.clone());
             }
+
             if let Err(err) = self
                 .broadcaster
                 .broadcast(
@@ -141,8 +152,10 @@ impl ReplayService {
             {
                 error!(%err, "broadcast failed");
             }
+
             previous = kline.close_time;
         }
+
         if let Err(err) = self
             .sessions_repo
             .update_status(session.session_id, SessionStatus::Ended)
@@ -150,9 +163,11 @@ impl ReplayService {
         {
             error!(%err, "failed to set session ended");
         }
+
         if let Err(err) = self.clock.pause(session.session_id).await {
             error!(%err, "failed to pause clock at end");
         }
+
         let _ = self.tasks.write().await.remove(&session.session_id);
     }
 
@@ -165,21 +180,26 @@ impl ReplayService {
     ) -> Result<Vec<Kline>, AppError> {
         let mut cursor = from;
         let mut out = Vec::new();
+
         loop {
             let batch = self
                 .market_store
                 .get_klines(symbol, interval, Some(cursor), Some(end), Some(1000))
                 .await?;
+
             if batch.is_empty() {
                 break;
             }
+
             let last_close = batch.last().map(|k| k.close_time).unwrap_or(cursor);
             out.extend(batch.into_iter());
+
             if last_close.0 >= end.0 {
                 break;
             }
             cursor = TimestampMs(last_close.0 + 1);
         }
+
         Ok(out)
     }
 }
@@ -212,12 +232,14 @@ fn serialize_kline(symbol: &str, interval: &Interval, kline: &Kline) -> String {
 impl ReplayEngine for ReplayService {
     async fn start(&self, session: SessionConfig) -> Result<(), AppError> {
         self.cancel_task(session.session_id).await;
+
         let service = Arc::new(self.clone_inner());
         let handle = tokio::spawn(
             service
                 .clone()
                 .run_session(session.clone(), session.start_time),
         );
+
         self.tasks.write().await.insert(session.session_id, handle);
         Ok(())
     }
@@ -232,9 +254,11 @@ impl ReplayEngine for ReplayService {
 
     async fn seek(&self, session_id: Uuid, to: TimestampMs) -> Result<(), AppError> {
         self.cancel_task(session_id).await;
+
         let session = self.sessions_repo.get(session_id).await?;
         let service = Arc::new(self.clone_inner());
         let handle = tokio::spawn(service.clone().run_session(session.clone(), to));
+
         self.tasks.write().await.insert(session_id, handle);
         Ok(())
     }
