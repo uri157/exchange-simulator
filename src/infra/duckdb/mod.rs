@@ -1,3 +1,4 @@
+pub mod schema;
 pub mod db;
 pub mod ingest_sql;
 pub mod ingest_runner;
