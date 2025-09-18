@@ -6,12 +6,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
-use crate::{
-    api::errors::ApiResult,
-    app::bootstrap::AppState,
-};
+use crate::api::errors::ApiResult;
 
-pub fn router() -> Router<AppState> {
+pub fn router() -> Router {
     Router::new()
         .route("/api/v1/binance/symbols", get(symbols))
         .route("/api/v1/binance/intervals", get(intervals))

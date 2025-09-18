@@ -1,7 +1,7 @@
 use axum::{
-    Json, Router,
-    extract::{Query, State},
+    extract::Query,
     routing::{delete, get, post},
+    Extension, Json, Router,
 };
 use tracing::instrument;
 
@@ -15,7 +15,7 @@ use crate::{
     },
 };
 
-pub fn router() -> Router<AppState> {
+pub fn router() -> Router {
     Router::new()
         .route(
             "/api/v3/order",
@@ -33,7 +33,7 @@ pub fn router() -> Router<AppState> {
 )]
 #[instrument(skip(state, payload))]
 pub async fn new_order(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Json(payload): Json<NewOrderRequest>,
 ) -> ApiResult<Json<NewOrderResponse>> {
     let (order, fills) = state
@@ -62,7 +62,7 @@ pub async fn new_order(
 )]
 #[instrument(skip(state, params))]
 pub async fn get_order(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Query(params): Query<QueryOrderParams>,
 ) -> ApiResult<Json<OrderResponse>> {
     let order = if let Some(order_id) = params.order_id {
@@ -91,7 +91,7 @@ pub async fn get_order(
 )]
 #[instrument(skip(state, params))]
 pub async fn cancel_order(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Query(params): Query<CancelOrderParams>,
 ) -> ApiResult<Json<OrderResponse>> {
     let order = if let Some(id) = params.order_id {
@@ -124,7 +124,7 @@ pub async fn cancel_order(
 )]
 #[instrument(skip(state, params))]
 pub async fn open_orders(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Query(params): Query<OpenOrdersParams>,
 ) -> ApiResult<Json<Vec<OrderResponse>>> {
     let orders = state
@@ -142,7 +142,7 @@ pub async fn open_orders(
 )]
 #[instrument(skip(state, params))]
 pub async fn my_trades(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     Query(params): Query<MyTradesParams>,
 ) -> ApiResult<Json<Vec<FillResponse>>> {
     let trades = state

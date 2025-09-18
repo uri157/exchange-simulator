@@ -1,9 +1,9 @@
-use axum::{routing::get, Json, Router};
+use axum::{routing::get, Extension, Json, Router};
 use duckdb::Row;
 use serde::Serialize;
 use tracing::instrument;
 
-use crate::{app::bootstrap::AppState, api::errors::ApiResult, error::AppError};
+use crate::{api::errors::ApiResult, app::bootstrap::AppState, error::AppError};
 
 #[derive(Serialize)]
 pub struct DebugDbResponse {
@@ -29,7 +29,7 @@ pub struct TableCounts {
     pub symbols: i64,
 }
 
-pub fn router() -> Router<AppState> {
+pub fn router() -> Router {
     Router::new().route("/api/v1/debug/db", get(debug_db))
 }
 
@@ -41,7 +41,7 @@ pub fn router() -> Router<AppState> {
     )
 )]
 #[instrument(skip(state))]
-pub async fn debug_db(state: axum::extract::State<AppState>) -> ApiResult<Json<DebugDbResponse>> {
+pub async fn debug_db(Extension(state): Extension<AppState>) -> ApiResult<Json<DebugDbResponse>> {
     // Usamos el pool directo para consultar PRAGMA y conteos
     let pool = state.duck_pool.clone();
 

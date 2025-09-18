@@ -1,4 +1,4 @@
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{Extension, Json, Router, routing::get};
 use std::str::FromStr;
 use tracing::instrument;
 
@@ -9,7 +9,7 @@ use crate::{
     dto::market::{ExchangeInfoResponse, KlineResponse, KlinesParams, SymbolInfo},
 };
 
-pub fn router() -> Router<AppState> {
+pub fn router() -> Router {
     Router::new()
         .route("/api/v1/exchangeInfo", get(exchange_info))
         .route("/api/v3/klines", get(klines))
@@ -21,7 +21,9 @@ pub fn router() -> Router<AppState> {
     responses((status = 200, body = ExchangeInfoResponse))
 )]
 #[instrument(skip(state))]
-pub async fn exchange_info(State(state): State<AppState>) -> ApiResult<Json<ExchangeInfoResponse>> {
+pub async fn exchange_info(
+    Extension(state): Extension<AppState>,
+) -> ApiResult<Json<ExchangeInfoResponse>> {
     let symbols = state.market_service.exchange_info().await?;
     let response = ExchangeInfoResponse {
         symbols: symbols.into_iter().map(SymbolInfo::from).collect(),
@@ -43,7 +45,7 @@ pub async fn exchange_info(State(state): State<AppState>) -> ApiResult<Json<Exch
 )]
 #[instrument(skip(state, params))]
 pub async fn klines(
-    State(state): State<AppState>,
+    Extension(state): Extension<AppState>,
     params: axum::extract::Query<KlinesParams>,
 ) -> ApiResult<Json<Vec<KlineResponse>>> {
     let params = params.0;
