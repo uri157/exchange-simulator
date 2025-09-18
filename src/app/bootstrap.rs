@@ -13,7 +13,7 @@ use crate::{
         ws::broadcaster::SessionBroadcaster,
     },
     services::{
-        account_service::AccountService, ingest_service::IngestService,
+        account_service::AccountService, IngestService, // ← usa el re-export
         market_service::MarketService, orders_service::OrdersService,
         replay_service::ReplayService, sessions_service::SessionsService,
     },

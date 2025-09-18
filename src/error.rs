@@ -3,7 +3,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
-use thiserror::Error;
+    use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -15,6 +15,8 @@ pub enum AppError {
     Conflict(String),
     #[error("database error: {0}")]
     Database(String),
+    #[error("external service error: {0}")]
+    External(String),
     #[error("internal server error: {0}")]
     Internal(String),
 }
@@ -26,6 +28,7 @@ impl AppError {
             AppError::Validation(_) => StatusCode::BAD_REQUEST,
             AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::External(_) => StatusCode::BAD_GATEWAY,
             AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

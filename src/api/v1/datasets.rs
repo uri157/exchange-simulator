@@ -1,7 +1,7 @@
 use axum::{
     Json, Router,
     extract::{Path, State},
-    routing::{get, post},
+    routing::post,
 };
 use tracing::instrument;
 use uuid::Uuid;
@@ -9,8 +9,7 @@ use uuid::Uuid;
 use crate::{
     api::errors::ApiResult,
     app::bootstrap::AppState,
-    domain::value_objects::DatasetPath,
-    dto::datasets::{DatasetResponse, RegisterDatasetRequest},
+    dto::datasets::{DatasetResponse, CreateDatasetRequest},
 };
 
 pub fn router() -> Router<AppState> {
@@ -25,20 +24,21 @@ pub fn router() -> Router<AppState> {
 #[utoipa::path(
     post,
     path = "/api/v1/datasets",
-    request_body = RegisterDatasetRequest,
+    request_body = CreateDatasetRequest,
     responses((status = 200, body = DatasetResponse))
 )]
 #[instrument(skip(state, payload))]
 pub async fn register_dataset(
     State(state): State<AppState>,
-    Json(payload): Json<RegisterDatasetRequest>,
+    Json(payload): Json<CreateDatasetRequest>,
 ) -> ApiResult<Json<DatasetResponse>> {
     let dataset = state
         .ingest_service
         .register_dataset(
-            &payload.name,
-            DatasetPath::from(payload.path),
-            payload.format,
+            &payload.symbol,
+            &payload.interval,
+            payload.start_time,
+            payload.end_time,
         )
         .await?;
     Ok(Json(dataset.into()))

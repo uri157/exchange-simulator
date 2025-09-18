@@ -2,7 +2,10 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::domain::value_objects::{DatasetPath, Interval, Price, Quantity, Speed, TimestampMs};
+pub mod dataset_status;
+pub use dataset_status::DatasetStatus;
+
+use crate::domain::value_objects::{Interval, Price, Quantity, Speed, TimestampMs};
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Symbol {
@@ -116,15 +119,19 @@ pub struct SessionConfig {
     pub updated_at: TimestampMs,
 }
 
+// === Nuevo esquema de datasets (fuente: Binance) ===
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct DatasetMetadata {
     pub id: Uuid,
-    pub name: String,
-    pub base_path: DatasetPath,
-    pub format: DatasetFormat,
-    pub created_at: TimestampMs,
+    pub symbol: String,
+    pub interval: String, // e.g. "1m","1h","1d"
+    pub start_time: i64,  // epoch ms
+    pub end_time: i64,    // epoch ms
+    pub status: String,   // "registered" | "ingesting" | "ready" | "failed"
+    pub created_at: i64,  // epoch ms
 }
 
+// (Opcional) Compat con ingestiones locales antiguas.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum DatasetFormat {

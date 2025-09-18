@@ -4,10 +4,10 @@ use uuid::Uuid;
 use crate::{
     domain::{
         models::{
-            AccountSnapshot, DatasetFormat, DatasetMetadata, Fill, Kline, Order, SessionConfig,
-            SessionStatus, Symbol,
+            AccountSnapshot, DatasetMetadata, Fill, Kline, Order, SessionConfig, SessionStatus,
+            Symbol,
         },
-        value_objects::{DatasetPath, Interval, Speed, TimestampMs},
+        value_objects::{Interval, Speed, TimestampMs},
     },
     error::AppError,
 };
@@ -29,9 +29,10 @@ pub trait MarketStore: Send + Sync {
 pub trait MarketIngestor: Send + Sync {
     async fn register_dataset(
         &self,
-        name: &str,
-        path: DatasetPath,
-        format: DatasetFormat,
+        symbol: &str,
+        interval: &str,
+        start_time: i64,
+        end_time: i64,
     ) -> Result<DatasetMetadata, AppError>;
     async fn list_datasets(&self) -> Result<Vec<DatasetMetadata>, AppError>;
     async fn ingest_dataset(&self, dataset_id: Uuid) -> Result<(), AppError>;

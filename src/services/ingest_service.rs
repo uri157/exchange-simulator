@@ -1,11 +1,7 @@
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::domain::{
-    models::{DatasetFormat, DatasetMetadata},
-    traits::MarketIngestor,
-    value_objects::DatasetPath,
-};
+use crate::domain::traits::MarketIngestor;
 
 use super::ServiceResult;
 
@@ -20,14 +16,17 @@ impl IngestService {
 
     pub async fn register_dataset(
         &self,
-        name: &str,
-        path: DatasetPath,
-        format: DatasetFormat,
-    ) -> ServiceResult<DatasetMetadata> {
-        self.ingestor.register_dataset(name, path, format).await
+        symbol: &str,
+        interval: &str,
+        start_time: i64,
+        end_time: i64,
+    ) -> ServiceResult<crate::domain::models::DatasetMetadata> {
+        self.ingestor
+            .register_dataset(symbol, interval, start_time, end_time)
+            .await
     }
 
-    pub async fn list_datasets(&self) -> ServiceResult<Vec<DatasetMetadata>> {
+    pub async fn list_datasets(&self) -> ServiceResult<Vec<crate::domain::models::DatasetMetadata>> {
         self.ingestor.list_datasets().await
     }
 

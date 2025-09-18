@@ -1,19 +1,15 @@
-use std::fs;
-
-use chrono::Utc;
-use duckdb::params;
 use uuid::Uuid;
 
 use crate::{
-    domain::{
-        models::{DatasetFormat, DatasetMetadata},
-        traits::MarketIngestor,
-        value_objects::{DatasetPath, TimestampMs},
-    },
+    domain::{models::DatasetMetadata, traits::MarketIngestor},
     error::AppError,
 };
 
-use super::db::DuckDbPool;
+use super::{
+    db::DuckDbPool,
+    duckdb::ingest_sql,        // helpers de SQL (insert/select/update/list)
+    duckdb::ingest_runner,     // orquestador de descarga+ingesta
+};
 
 #[derive(Clone)]
 pub struct DuckDbIngestRepo {
@@ -26,197 +22,90 @@ impl DuckDbIngestRepo {
     }
 }
 
-fn infer_base_quote(symbol: &str) -> (String, String) {
-    const COMMON_QUOTES: [&str; 5] = ["USDT", "USD", "BUSD", "BTC", "ETH"];
-    for quote in COMMON_QUOTES.iter() {
-        if let Some(base) = symbol.strip_suffix(quote) {
-            if !base.is_empty() {
-                return (base.to_string(), (*quote).to_string());
-            }
-        }
-    }
-    let len = symbol.len();
-    let split = len / 2;
-    (symbol[..split].to_string(), symbol[split..].to_string())
-}
-
 #[async_trait::async_trait]
 impl MarketIngestor for DuckDbIngestRepo {
     async fn register_dataset(
         &self,
-        name: &str,
-        path: DatasetPath,
-        format: DatasetFormat,
+        symbol: &str,
+        interval: &str,
+        start_time: i64,
+        end_time: i64,
     ) -> Result<DatasetMetadata, AppError> {
-        if fs::metadata(path.as_str()).is_err() {
-            return Err(AppError::Validation(format!(
-                "dataset path does not exist: {}",
-                path.as_str()
-            )));
+        if start_time <= 0 || end_time <= 0 || end_time <= start_time {
+            return Err(AppError::Validation(
+                "invalid time range for dataset".to_string(),
+            ));
         }
+
+        let meta = DatasetMetadata {
+            id: Uuid::new_v4(),
+            symbol: symbol.to_string(),
+            interval: interval.to_string(),
+            start_time,
+            end_time,
+            status: "registered".to_string(),
+            created_at: chrono::Utc::now().timestamp_millis(),
+        };
+
         let pool = self.pool.clone();
-        let name = name.to_string();
-        let path_string = path.0.clone();
         pool.with_conn_async(move |conn| {
-            let id = Uuid::new_v4();
-            let created_at = TimestampMs::from(Utc::now().timestamp_millis());
-            conn.execute(
-                "INSERT INTO datasets(id, name, path, format, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![id.to_string(), name, path_string, format.to_string(), created_at.0],
-            )
-            .map_err(|err| AppError::Database(format!("insert dataset failed: {err}")))?;
-            Ok(DatasetMetadata {
-                id,
-                name,
-                base_path: DatasetPath(path_string),
-                format,
-                created_at,
-            })
+            ingest_sql::insert_dataset_row(conn, &meta)?;
+            Ok::<_, AppError>(())
         })
-        .await
+        .await?;
+
+        Ok(meta)
     }
 
     async fn list_datasets(&self) -> Result<Vec<DatasetMetadata>, AppError> {
         let pool = self.pool.clone();
-        pool.with_conn_async(|conn| {
-            let mut stmt = conn
-                .prepare("SELECT id, name, path, format, created_at FROM datasets ORDER BY created_at DESC")
-                .map_err(|err| AppError::Database(format!("prepare datasets failed: {err}")))?;
-            let mut rows = stmt
-                .query([])
-                .map_err(|err| AppError::Database(format!("query datasets failed: {err}")))?;
-            let mut out = Vec::new();
-            while let Some(row) = rows
-                .next()
-                .map_err(|err| AppError::Database(format!("row iteration failed: {err}")))?
-            {
-                let format_str: String = row
-                    .get(3)
-                    .map_err(|err| AppError::Database(format!("column error: {err}")))?;
-                let format = format_str
-                    .parse::<DatasetFormat>()
-                    .map_err(|err| AppError::Validation(err.to_string()))?;
-                let id_str: String = row
-                    .get(0)
-                    .map_err(|err| AppError::Database(format!("column error: {err}")))?;
-                let id = Uuid::parse_str(&id_str)
-                    .map_err(|err| AppError::Database(format!("uuid parse error: {err}")))?;
-                out.push(DatasetMetadata {
-                    id,
-                    name: row
-                        .get(1)
-                        .map_err(|err| AppError::Database(format!("column error: {err}")))?,
-                    base_path: DatasetPath(row
-                        .get::<_, String>(2)
-                        .map_err(|err| AppError::Database(format!("column error: {err}")))?),
-                    format,
-                    created_at: TimestampMs(row
-                        .get::<_, i64>(4)
-                        .map_err(|err| AppError::Database(format!("column error: {err}")))?),
-                });
-            }
-            Ok(out)
-        })
-        .await
+        pool.with_conn_async(|conn| ingest_sql::list_datasets_query(conn)).await
     }
 
     async fn ingest_dataset(&self, dataset_id: Uuid) -> Result<(), AppError> {
+        // 1) Cargar metadata
+        let (symbol, interval, start_time, end_time) = {
+            let pool = self.pool.clone();
+            pool.with_conn_async({
+                let dataset_id = dataset_id.to_string();
+                move |conn| ingest_sql::select_dataset_meta(conn, &dataset_id)
+            })
+            .await?
+        };
+
+        let meta = DatasetMetadata {
+            id: dataset_id,
+            symbol,
+            interval,
+            start_time,
+            end_time,
+            status: "ingesting".to_string(),
+            created_at: 0, // no se usa aquí
+        };
+
+        // 2) Marcar status = ingesting
+        {
+            let pool = self.pool.clone();
+            pool.with_conn_async({
+                let id = dataset_id.to_string();
+                move |conn| ingest_sql::mark_dataset_status(conn, &id, "ingesting")
+            })
+            .await?;
+        }
+
+        // 3) Orquestar descarga + ingesta
+        let inserted_any = ingest_runner::run_ingest(&self.pool, &meta).await?;
+
+        // 4) Marcar status final
+        let final_status = if inserted_any { "ready" } else { "failed" };
         let pool = self.pool.clone();
-        pool.with_conn_async(move |conn| {
-            let mut stmt = conn
-                .prepare("SELECT path, format FROM datasets WHERE id = ?1")
-                .map_err(|err| AppError::Database(format!("prepare dataset lookup failed: {err}")))?;
-            let mut rows = stmt
-                .query(params![dataset_id.to_string()])
-                .map_err(|err| AppError::Database(format!("query dataset failed: {err}")))?;
-            let row = rows
-                .next()
-                .map_err(|err| AppError::Database(format!("read dataset row failed: {err}")))?
-                .ok_or_else(|| AppError::NotFound(format!("dataset {dataset_id} not found")))?;
-            let path: String = row
-                .get(0)
-                .map_err(|err| AppError::Database(format!("column error: {err}")))?;
-            let format_str: String = row
-                .get(1)
-                .map_err(|err| AppError::Database(format!("column error: {err}")))?;
-            let format = format_str
-                .parse::<DatasetFormat>()
-                .map_err(|err| AppError::Validation(err.to_string()))?;
-
-            match format {
-                DatasetFormat::Csv => {
-                    let import_sql = format!(
-                        "INSERT OR REPLACE INTO klines(symbol, interval, open_time, open, high, low, close, volume, close_time)
-                         SELECT symbol, interval, open_time, open, high, low, close, volume, close_time
-                         FROM read_csv_auto('{}', HEADER TRUE)",
-                        path
-                    );
-                    conn.execute(&import_sql, [])
-                        .map_err(|err| AppError::Database(format!("csv ingest failed: {err}")))?;
-
-                    let distinct_sql = format!(
-                        "SELECT DISTINCT symbol FROM read_csv_auto('{}', HEADER TRUE)",
-                        path
-                    );
-                    let mut symbols_stmt = conn
-                        .prepare(&distinct_sql)
-                        .map_err(|err| AppError::Database(format!("prepare distinct failed: {err}")))?;
-                    let mut sym_rows = symbols_stmt
-                        .query([])
-                        .map_err(|err| AppError::Database(format!("query distinct failed: {err}")))?;
-                    while let Some(sym_row) = sym_rows
-                        .next()
-                        .map_err(|err| AppError::Database(format!("symbol iteration failed: {err}")))?
-                    {
-                        let symbol: String = sym_row
-                            .get(0)
-                            .map_err(|err| AppError::Database(format!("symbol column failed: {err}")))?;
-                        let (base, quote) = infer_base_quote(&symbol);
-                        conn.execute(
-                            "INSERT OR REPLACE INTO symbols(symbol, base, quote, active) VALUES (?1, ?2, ?3, TRUE)",
-                            params![symbol, base, quote],
-                        )
-                        .map_err(|err| AppError::Database(format!("insert symbol failed: {err}")))?;
-                    }
-                }
-                DatasetFormat::Parquet => {
-                    let import_sql = format!(
-                        "INSERT OR REPLACE INTO klines(symbol, interval, open_time, open, high, low, close, volume, close_time)
-                         SELECT symbol, interval, open_time, open, high, low, close, volume, close_time
-                         FROM read_parquet('{}')",
-                        path
-                    );
-                    conn.execute(&import_sql, [])
-                        .map_err(|err| AppError::Database(format!("parquet ingest failed: {err}")))?;
-
-                    let distinct_sql = format!(
-                        "SELECT DISTINCT symbol FROM read_parquet('{}')",
-                        path
-                    );
-                    let mut symbols_stmt = conn
-                        .prepare(&distinct_sql)
-                        .map_err(|err| AppError::Database(format!("prepare distinct failed: {err}")))?;
-                    let mut sym_rows = symbols_stmt
-                        .query([])
-                        .map_err(|err| AppError::Database(format!("query distinct failed: {err}")))?;
-                    while let Some(sym_row) = sym_rows
-                        .next()
-                        .map_err(|err| AppError::Database(format!("symbol iteration failed: {err}")))?
-                    {
-                        let symbol: String = sym_row
-                            .get(0)
-                            .map_err(|err| AppError::Database(format!("symbol column failed: {err}")))?;
-                        let (base, quote) = infer_base_quote(&symbol);
-                        conn.execute(
-                            "INSERT OR REPLACE INTO symbols(symbol, base, quote, active) VALUES (?1, ?2, ?3, TRUE)",
-                            params![symbol, base, quote],
-                        )
-                        .map_err(|err| AppError::Database(format!("insert symbol failed: {err}")))?;
-                    }
-                }
-            }
-            Ok(())
+        pool.with_conn_async({
+            let id = dataset_id.to_string();
+            let status = final_status.to_string();
+            move |conn| ingest_sql::mark_dataset_status(conn, &id, &status)
         })
-        .await
+        .await?;
+
+        Ok(())
     }
 }

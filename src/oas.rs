@@ -22,7 +22,11 @@ use crate::dto;
         crate::api::v1::orders::cancel_order,
         crate::api::v1::orders::open_orders,
         crate::api::v1::orders::my_trades,
-        crate::api::v1::account::get_account
+        crate::api::v1::account::get_account,
+        // Binance proxy
+        crate::api::v1::market_binance::symbols,
+        crate::api::v1::market_binance::intervals,
+        crate::api::v1::market_binance::range
     ),
     components(
         schemas(
@@ -31,7 +35,7 @@ use crate::dto;
             dto::market::SymbolInfo,
             dto::market::KlineResponse,
             dto::market::KlinesParams,
-            dto::datasets::RegisterDatasetRequest,
+            dto::datasets::CreateDatasetRequest,
             dto::datasets::DatasetResponse,
             dto::sessions::CreateSessionRequest,
             dto::sessions::SessionResponse,
@@ -52,6 +56,7 @@ use crate::dto;
             crate::domain::models::OrderSide,
             crate::domain::models::OrderType,
             crate::domain::models::SessionStatus,
+            // Mantener si aún se usan en otras rutas
             crate::domain::models::DatasetFormat,
             crate::domain::value_objects::Interval,
             crate::domain::value_objects::TimestampMs,
@@ -66,7 +71,8 @@ use crate::dto;
         (name = "datasets", description = "Dataset ingestion"),
         (name = "sessions", description = "Replay sessions"),
         (name = "orders", description = "Orders"),
-        (name = "account", description = "Accounts")
+        (name = "account", description = "Accounts"),
+        (name = "binance", description = "Binance proxy endpoints")
     )
 )]
 pub struct ApiDoc;
