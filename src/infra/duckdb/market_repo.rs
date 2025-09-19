@@ -78,7 +78,7 @@ impl MarketStore for DuckDbMarketStore {
                 .prepare(
                     "SELECT symbol, interval, open_time, open, high, low, close, volume, close_time \
                      FROM klines WHERE symbol = ?1 AND interval = ?2 \
-                     AND (?3 IS NULL OR open_time >= ?3) \
+                     AND (?3 IS NULL OR open_time > ?3) \
                      AND (?4 IS NULL OR open_time <= ?4) \
                      ORDER BY open_time LIMIT ?5",
                 )
