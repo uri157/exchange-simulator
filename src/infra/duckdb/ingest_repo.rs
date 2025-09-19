@@ -120,20 +120,23 @@ impl MarketIngestor for DuckDbIngestRepo {
 
     async fn list_ready_intervals(&self, symbol: &str) -> Result<Vec<String>, AppError> {
         let pool = self.pool.clone();
-        let symbol = symbol.to_string();
-        pool.with_conn_async(move |conn| ingest_sql::list_ready_intervals_for_symbol(conn, &symbol))
-            .await
+        let symbol_owned = symbol.to_string();
+        pool.with_conn_async(move |conn| {
+            ingest_sql::list_ready_intervals_for_symbol(conn, &symbol_owned)
+        })
+        .await
     }
 
     async fn get_range(&self, symbol: &str, interval: &str) -> Result<(i64, i64), AppError> {
         let pool = self.pool.clone();
-        let symbol = symbol.to_string();
-        let interval = interval.to_string();
+        let sym_owned = symbol.to_string();
+        let intv_owned = interval.to_string();
         let maybe_range = pool
             .with_conn_async(move |conn| {
-                ingest_sql::get_range_for_symbol_interval(conn, &symbol, &interval)
+                ingest_sql::get_range_for_symbol_interval(conn, &sym_owned, &intv_owned)
             })
             .await?;
+
         maybe_range.ok_or_else(|| {
             AppError::NotFound(format!(
                 "range for symbol {symbol} interval {interval} not found"
