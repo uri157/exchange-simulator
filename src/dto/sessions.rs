@@ -18,7 +18,7 @@ pub struct CreateSessionRequest {
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionResponse {
-    pub session_id: Uuid,
+    pub id: Uuid,
     pub symbols: Vec<String>,
     pub interval: String,
     pub start_time: i64,
@@ -26,12 +26,13 @@ pub struct SessionResponse {
     pub speed: f64,
     pub status: SessionStatus,
     pub seed: u64,
+    pub created_at: i64,
 }
 
 impl From<SessionConfig> for SessionResponse {
     fn from(value: SessionConfig) -> Self {
         Self {
-            session_id: value.session_id,
+            id: value.session_id,
             symbols: value.symbols,
             interval: value.interval.as_str().to_string(),
             start_time: value.start_time.0,
@@ -39,6 +40,7 @@ impl From<SessionConfig> for SessionResponse {
             speed: value.speed.0,
             status: value.status,
             seed: value.seed,
+            created_at: value.created_at.0,
         }
     }
 }
