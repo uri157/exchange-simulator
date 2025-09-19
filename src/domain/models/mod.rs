@@ -96,7 +96,7 @@ pub struct AccountSnapshot {
     pub balances: Vec<Balance>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub enum SessionStatus {
     Created,
     Running,

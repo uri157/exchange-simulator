@@ -57,7 +57,7 @@ impl ReplayService {
         }
     }
 
-    async fn run_session(self: Arc<Self>, mut session: SessionConfig, from: TimestampMs) {
+    async fn run_session(self: Arc<Self>, session: SessionConfig, from: TimestampMs) {
         info!(session_id = %session.session_id, "starting replay session");
 
         if let Err(err) = self
@@ -95,12 +95,12 @@ impl ReplayService {
                 from
             }
         };
+
         for (symbol, kline) in timeline {
             if kline.open_time.0 > session.end_time.0 {
                 break;
             }
 
-            // Esperar si está pausado
             loop {
                 match self.clock.is_paused(session.session_id).await {
                     Ok(paused) if paused => {
@@ -115,7 +115,6 @@ impl ReplayService {
                 }
             }
 
-            // Escalar el tiempo según la velocidad
             let speed = match self.clock.current_speed(session.session_id).await {
                 Ok(speed) => speed,
                 Err(err) => {
@@ -226,7 +225,9 @@ impl ReplayService {
             if last_open >= end.0 {
                 break;
             }
-            cursor = last_open;
+
+            // Evitar repetir el último open_time para no ciclar ni retroceder el reloj
+            cursor = last_open.saturating_add(1);
         }
 
         Ok(out)
