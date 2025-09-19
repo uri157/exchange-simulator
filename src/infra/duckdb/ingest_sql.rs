@@ -272,16 +272,9 @@ pub fn progress_upsert_chunk(
 pub fn list_ready_dataset_symbols(conn: &Connection) -> Result<Vec<String>, AppError> {
     let mut stmt = conn
         .prepare(
-            "WITH ready(symbol) AS (
-                 SELECT DISTINCT symbol
-                   FROM datasets
-                  WHERE status = 'ready'
-             )
-             SELECT symbol FROM ready
-             UNION
-             SELECT DISTINCT symbol
-               FROM klines
-              WHERE NOT EXISTS (SELECT 1 FROM ready)
+            "SELECT DISTINCT symbol
+               FROM datasets
+              WHERE status = 'ready'
               ORDER BY symbol",
         )
         .map_err(|e| AppError::Database(format!("prepare ready symbols failed: {e}")))?;

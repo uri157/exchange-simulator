@@ -103,6 +103,10 @@ impl crate::domain::traits::Clock for SimulatedClock {
             AppError::NotFound(format!("clock for session {session_id} not found"))
         })?;
         if to.0 < state.current_time.0 {
+            if state.paused {
+                state.current_time = to;
+                return Ok(());
+            }
             return Err(AppError::Validation("cannot move clock backwards".into()));
         }
         state.current_time = to;

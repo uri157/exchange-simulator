@@ -110,6 +110,21 @@ impl SessionsService {
         session_id: Uuid,
         to: TimestampMs,
     ) -> ServiceResult<SessionConfig> {
+        let session = self.sessions_repo.get(session_id).await?;
+
+        if to.0 < session.start_time.0 || to.0 > session.end_time.0 {
+            return Err(crate::error::AppError::Validation(
+                "seek target outside session range".into(),
+            ));
+        }
+
+        let current = self.clock.now(session_id).await?;
+        if session.status == SessionStatus::Running && to.0 < current.0 {
+            return Err(crate::error::AppError::Validation(
+                "cannot seek backwards while session is running".into(),
+            ));
+        }
+
         self.clock.advance_to(session_id, to).await?;
         self.replay.seek(session_id, to).await?;
         self.sessions_repo.get(session_id).await
