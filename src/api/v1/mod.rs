@@ -18,4 +18,5 @@ pub fn router() -> Router {
         .merge(orders::router())
         .merge(account::router())
         .merge(ws::router())
+        .merge(debug::router())
 }

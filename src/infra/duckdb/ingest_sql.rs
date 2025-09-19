@@ -273,3 +273,94 @@ pub fn progress_upsert_chunk(
     .map_err(|e| AppError::Database(format!("progress update failed: {e}")))?;
     Ok(())
 }
+
+/* =========================
+   Endpoints de datasets (ready) para Sessions UI
+   ========================= */
+
+pub fn list_ready_dataset_symbols(conn: &Connection) -> Result<Vec<String>, AppError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT symbol
+               FROM datasets
+              WHERE status = 'ready'
+              ORDER BY symbol",
+        )
+        .map_err(|e| AppError::Database(format!("prepare ready symbols failed: {e}")))?;
+    let mut rows = stmt
+        .query([])
+        .map_err(|e| AppError::Database(format!("query ready symbols failed: {e}")))?;
+    let mut out = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .map_err(|e| AppError::Database(format!("row iteration failed: {e}")))?
+    {
+        let s: String = row
+            .get(0)
+            .map_err(|e| AppError::Database(format!("column error: {e}")))?;
+        out.push(s);
+    }
+    Ok(out)
+}
+
+pub fn list_ready_intervals_for_symbol(
+    conn: &Connection,
+    symbol: &str,
+) -> Result<Vec<String>, AppError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT interval
+               FROM datasets
+              WHERE status = 'ready' AND symbol = ?1
+              ORDER BY interval",
+        )
+        .map_err(|e| AppError::Database(format!("prepare ready intervals failed: {e}")))?;
+    let mut rows = stmt
+        .query(params![symbol])
+        .map_err(|e| AppError::Database(format!("query ready intervals failed: {e}")))?;
+    let mut out = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .map_err(|e| AppError::Database(format!("row iteration failed: {e}")))?
+    {
+        let i: String = row
+            .get(0)
+            .map_err(|e| AppError::Database(format!("column error: {e}")))?;
+        out.push(i);
+    }
+    Ok(out)
+}
+
+pub fn get_range_for_symbol_interval(
+    conn: &Connection,
+    symbol: &str,
+    interval: &str,
+) -> Result<Option<(i64, i64)>, AppError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT MIN(open_time) AS first_open, MAX(close_time) AS last_close
+               FROM klines
+              WHERE symbol = ?1 AND interval = ?2",
+        )
+        .map_err(|e| AppError::Database(format!("prepare range failed: {e}")))?;
+    let mut rows = stmt
+        .query(params![symbol, interval])
+        .map_err(|e| AppError::Database(format!("query range failed: {e}")))?;
+    if let Some(row) = rows
+        .next()
+        .map_err(|e| AppError::Database(format!("row read failed: {e}")))?
+    {
+        let first: Option<i64> = row
+            .get(0)
+            .map_err(|e| AppError::Database(format!("column error: {e}")))?;
+        let last: Option<i64> = row
+            .get(1)
+            .map_err(|e| AppError::Database(format!("column error: {e}")))?;
+        Ok(match (first, last) {
+            (Some(f), Some(l)) if f <= l => Some((f, l)),
+            _ => None,
+        })
+    } else {
+        Ok(None)
+    }
+}

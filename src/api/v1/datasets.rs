@@ -4,13 +4,15 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
-use tracing::{instrument, info, error};
+use tracing::{error, info, instrument};
 use uuid::Uuid;
 
 use crate::{
     api::errors::ApiResult,
     app::bootstrap::AppState,
-    dto::datasets::{CreateDatasetRequest, DatasetResponse},
+    dto::datasets::{
+        CreateDatasetRequest, DatasetResponse, IntervalOnly, RangeResponse, SymbolOnly,
+    },
 };
 
 pub fn router() -> Router {
@@ -19,8 +21,17 @@ pub fn router() -> Router {
             "/api/v1/datasets",
             post(register_dataset).get(list_datasets),
         )
-        // Axum usa :id para path params
         .route("/api/v1/datasets/:id/ingest", post(ingest_dataset))
+        // Nuevos endpoints para consultar lo disponible en la BD (datasets/klines)
+        .route("/api/v1/datasets/symbols", get(list_ready_symbols))
+        .route(
+            "/api/v1/datasets/:symbol/intervals",
+            get(list_ready_intervals),
+        )
+        .route(
+            "/api/v1/datasets/:symbol/:interval/range",
+            get(get_symbol_interval_range),
+        )
 }
 
 #[utoipa::path(
@@ -72,7 +83,6 @@ pub async fn ingest_dataset(
     Extension(state): Extension<AppState>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<StatusCode> {
-    // Disparamos la ingesta en background para evitar timeout del request.
     let ingest = state.ingest_service.clone();
     tokio::spawn(async move {
         info!(%id, "starting dataset ingestion task");
@@ -82,7 +92,55 @@ pub async fn ingest_dataset(
             info!(%id, "dataset ingestion finished");
         }
     });
-
-    // Respondemos inmediatamente.
     Ok(StatusCode::ACCEPTED)
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/datasets/symbols",
+    responses((status = 200, body = Vec<SymbolOnly>))
+)]
+#[instrument(skip(state))]
+pub async fn list_ready_symbols(
+    Extension(state): Extension<AppState>,
+) -> ApiResult<Json<Vec<SymbolOnly>>> {
+    let symbols = state.ingest_service.list_ready_symbols().await?;
+    Ok(Json(symbols.into_iter().map(SymbolOnly::from).collect()))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/datasets/{symbol}/intervals",
+    params(("symbol" = String, Path, description = "Trading pair")),
+    responses((status = 200, body = Vec<IntervalOnly>))
+)]
+#[instrument(skip(state), fields(symbol = %symbol))]
+pub async fn list_ready_intervals(
+    Extension(state): Extension<AppState>,
+    Path(symbol): Path<String>,
+) -> ApiResult<Json<Vec<IntervalOnly>>> {
+    let intervals = state.ingest_service.list_ready_intervals(&symbol).await?;
+    Ok(Json(intervals.into_iter().map(IntervalOnly::from).collect()))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/datasets/{symbol}/{interval}/range",
+    params(
+        ("symbol" = String, Path, description = "Trading pair"),
+        ("interval" = String, Path, description = "Interval (e.g., 1m, 1h)")
+    ),
+    responses((status = 200, body = RangeResponse))
+)]
+#[instrument(skip(state), fields(symbol = %path.0, interval = %path.1))]
+pub async fn get_symbol_interval_range(
+    Extension(state): Extension<AppState>,
+    Path(path): Path<(String, String)>,
+) -> ApiResult<Json<RangeResponse>> {
+    let (symbol, interval) = path;
+    let range = state
+        .ingest_service
+        .get_symbol_interval_range(&symbol, &interval)
+        .await?;
+    Ok(Json(RangeResponse::from(range)))
 }

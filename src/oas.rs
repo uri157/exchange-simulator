@@ -5,11 +5,17 @@ use crate::dto;
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        // Market
         crate::api::v1::market::exchange_info,
         crate::api::v1::market::klines,
+        // Datasets (ingesta y consultas locales)
         crate::api::v1::datasets::register_dataset,
         crate::api::v1::datasets::list_datasets,
         crate::api::v1::datasets::ingest_dataset,
+        crate::api::v1::datasets::dataset_symbols,         // GET /api/v1/datasets/symbols
+        crate::api::v1::datasets::dataset_intervals,       // GET /api/v1/datasets/:symbol/intervals
+        crate::api::v1::datasets::dataset_range,           // GET /api/v1/datasets/:symbol/:interval/range
+        // Sessions
         crate::api::v1::sessions::create_session,
         crate::api::v1::sessions::list_sessions,
         crate::api::v1::sessions::get_session,
@@ -17,13 +23,15 @@ use crate::dto;
         crate::api::v1::sessions::pause_session,
         crate::api::v1::sessions::resume_session,
         crate::api::v1::sessions::seek_session,
+        // Orders
         crate::api::v1::orders::new_order,
         crate::api::v1::orders::get_order,
         crate::api::v1::orders::cancel_order,
         crate::api::v1::orders::open_orders,
         crate::api::v1::orders::my_trades,
+        // Account
         crate::api::v1::account::get_account,
-        // Binance proxy
+        // Binance proxy (opcional)
         crate::api::v1::market_binance::symbols,
         crate::api::v1::market_binance::intervals,
         crate::api::v1::market_binance::range
@@ -51,12 +59,11 @@ use crate::dto;
             dto::account::BalanceResponse,
             dto::account::AccountQuery,
             dto::ws::WsQuery,
-            // Domain types referenced by DTOs
+            // Domain types referenciados por DTOs
             crate::domain::models::OrderStatus,
             crate::domain::models::OrderSide,
             crate::domain::models::OrderType,
             crate::domain::models::SessionStatus,
-            // Mantener si aún se usan en otras rutas
             crate::domain::models::DatasetFormat,
             crate::domain::value_objects::Interval,
             crate::domain::value_objects::TimestampMs,
@@ -68,7 +75,7 @@ use crate::dto;
     ),
     tags(
         (name = "market", description = "Market data endpoints"),
-        (name = "datasets", description = "Dataset ingestion"),
+        (name = "datasets", description = "Dataset ingestion & local dataset queries"),
         (name = "sessions", description = "Replay sessions"),
         (name = "orders", description = "Orders"),
         (name = "account", description = "Accounts"),
