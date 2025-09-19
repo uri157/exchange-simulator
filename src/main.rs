@@ -1,7 +1,11 @@
 use std::net::SocketAddr;
 use tracing_subscriber::{fmt, EnvFilter};
 
-use crate::{app::bootstrap::build_app, infra::config::AppConfig};
+use crate::{
+    api::v1::ws::WS_ROUTE,
+    app::bootstrap::build_app,
+    infra::{config::AppConfig, ws::broadcaster::WsBroadcastMessage},
+};
 
 mod api;
 mod app;
@@ -21,12 +25,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // config y router
     let config = AppConfig::from_env()?;
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
-    let app = build_app(config)?; // -> Router<()> con Extension(AppState) ya aplicada
+    let app = build_app(config.clone())?; // -> Router<()> con Extension(AppState) ya aplicada
+
+    let ws_example = WsBroadcastMessage::example_json();
+    tracing::info!("WS_EXPOSED_PATH={}", WS_ROUTE);
+    tracing::info!("WS_EXPECTED_QUERY=sessionId=<uuid>&streams=kline@{interval}:{symbol}[, ...]");
+    tracing::info!("WS_SAMPLE_MESSAGE={}", ws_example);
+    tracing::info!("PREGUNTAS_ABIERTAS=Confirmar reintentos del cliente tras cierre NORMAL");
 
     // axum 0.6 + hyper 0.14
     tracing::info!(%addr, "starting exchange simulator server");
     axum::Server::bind(&addr)
-        .serve(app.into_make_service()) // <- ahora compila
+        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .await?;
 
     Ok(())

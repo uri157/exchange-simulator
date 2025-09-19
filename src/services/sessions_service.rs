@@ -121,7 +121,7 @@ impl SessionsService {
         let current = self.clock.now(session_id).await?;
         if session.status == SessionStatus::Running && to.0 < current.0 {
             return Err(crate::error::AppError::Validation(
-                "cannot seek backwards while session is running".into(),
+                "cannot seek backwards while session is running; pause first".into(),
             ));
         }
 

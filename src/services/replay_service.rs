@@ -1,7 +1,6 @@
-use serde_json::json;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{sync::RwLock, task::JoinHandle, time::sleep};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{
@@ -11,7 +10,7 @@ use crate::{
         value_objects::{Interval, TimestampMs},
     },
     error::AppError,
-    infra::ws::broadcaster::SessionBroadcaster,
+    infra::ws::broadcaster::{SessionBroadcaster, WsBroadcastMessage, WsKlineData},
 };
 
 use super::ServiceResult;
@@ -60,6 +59,11 @@ impl ReplayService {
     async fn run_session(self: Arc<Self>, session: SessionConfig, from: TimestampMs) {
         info!(session_id = %session.session_id, "starting replay session");
 
+        {
+            let mut guard = self.latest.write().await;
+            guard.retain(|(sid, _), _| *sid != session.session_id);
+        }
+
         if let Err(err) = self
             .sessions_repo
             .update_status(session.session_id, SessionStatus::Running)
@@ -76,6 +80,11 @@ impl ReplayService {
             {
                 Ok(data) => {
                     for kline in data {
+                        if kline.open_time.0 < session.start_time.0
+                            || kline.close_time.0 > session.end_time.0
+                        {
+                            continue;
+                        }
                         timeline.push((symbol.clone(), kline));
                     }
                 }
@@ -136,6 +145,29 @@ impl ReplayService {
                 continue;
             }
 
+            if kline.close_time.0 <= from.0 {
+                previous = TimestampMs(previous.0.max(current_clock.0));
+                continue;
+            }
+
+            let should_skip = {
+                let guard = self.latest.read().await;
+                guard
+                    .get(&(session.session_id, symbol.clone()))
+                    .map(|prev| kline.close_time.0 <= prev.close_time.0)
+                    .unwrap_or(false)
+            };
+
+            if should_skip {
+                warn!(
+                    session_id = %session.session_id,
+                    symbol = %symbol,
+                    current_close = kline.close_time.0,
+                    "skipping kline with non-increasing closeTime"
+                );
+                continue;
+            }
+
             let baseline = if current_clock.0 > previous.0 {
                 current_clock
             } else {
@@ -159,20 +191,20 @@ impl ReplayService {
                 continue;
             }
 
-            {
-                let mut guard = self.latest.write().await;
-                guard.insert((session.session_id, symbol.clone()), kline.clone());
-            }
-
             if let Err(err) = self
                 .broadcaster
                 .broadcast(
                     session.session_id,
-                    serialize_kline(&symbol, &session.interval, &kline),
+                    build_ws_message(&symbol, &session.interval, &kline),
                 )
                 .await
             {
                 error!(%err, "broadcast failed");
+            }
+
+            {
+                let mut guard = self.latest.write().await;
+                guard.insert((session.session_id, symbol.clone()), kline.clone());
             }
 
             previous = kline.close_time;
@@ -188,6 +220,13 @@ impl ReplayService {
 
         if let Err(err) = self.clock.pause(session.session_id).await {
             error!(%err, "failed to pause clock at end");
+        }
+
+        self.broadcaster.close_session(session.session_id).await;
+
+        {
+            let mut guard = self.latest.write().await;
+            guard.retain(|(sid, _), _| *sid != session.session_id);
         }
 
         let _ = self.tasks.write().await.remove(&session.session_id);
@@ -220,9 +259,23 @@ impl ReplayService {
             }
 
             let last_open = batch.last().map(|k| k.open_time.0).unwrap_or(cursor);
-            out.extend(batch.into_iter());
+            let mut reached_end = false;
+            for kline in batch.into_iter() {
+                if kline.open_time.0 < from.0 || kline.open_time.0 > end.0 {
+                    continue;
+                }
+                if kline.close_time.0 > end.0 {
+                    reached_end = true;
+                    break;
+                }
+                out.push(kline);
+            }
 
             if last_open >= end.0 {
+                break;
+            }
+
+            if reached_end {
                 break;
             }
 
@@ -234,23 +287,22 @@ impl ReplayService {
     }
 }
 
-fn serialize_kline(symbol: &str, interval: &Interval, kline: &Kline) -> String {
-    let payload = json!({
-        "stream": format!("kline@{}:{}", interval.as_str(), symbol),
-        "data": {
-            "event": "kline",
-            "symbol": symbol,
-            "interval": interval.as_str(),
-            "openTime": kline.open_time.0,
-            "closeTime": kline.close_time.0,
-            "open": kline.open.0,
-            "high": kline.high.0,
-            "low": kline.low.0,
-            "close": kline.close.0,
-            "volume": kline.volume.0,
-        }
-    });
-    payload.to_string()
+fn build_ws_message(symbol: &str, interval: &Interval, kline: &Kline) -> WsBroadcastMessage {
+    WsBroadcastMessage {
+        stream: format!("kline@{}:{}", interval.as_str(), symbol),
+        data: WsKlineData {
+            event: "kline",
+            symbol: symbol.to_string(),
+            interval: interval.as_str().to_string(),
+            open_time: kline.open_time.0,
+            close_time: kline.close_time.0,
+            open: kline.open.0,
+            high: kline.high.0,
+            low: kline.low.0,
+            close: kline.close.0,
+            volume: kline.volume.0,
+        },
+    }
 }
 
 #[async_trait::async_trait]

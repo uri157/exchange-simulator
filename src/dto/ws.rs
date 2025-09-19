@@ -6,5 +6,5 @@ use uuid::Uuid;
 #[serde(rename_all = "camelCase")]
 pub struct WsQuery {
     pub session_id: Uuid,
-    pub streams: Option<String>,
+    pub streams: String,
 }
