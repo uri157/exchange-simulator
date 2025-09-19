@@ -23,10 +23,10 @@ pub fn router() -> Router {
         )
         .route("/api/v1/datasets/:id/ingest", post(ingest_dataset))
         // Nuevos endpoints para consultar lo disponible en la BD (datasets/klines)
-        .route("/api/v1/datasets/symbols", get(list_ready_symbols))
+        .route("/api/v1/datasets/symbols", get(get_ready_symbols))
         .route(
             "/api/v1/datasets/:symbol/intervals",
-            get(list_ready_intervals),
+            get(get_ready_intervals),
         )
         .route(
             "/api/v1/datasets/:symbol/:interval/range",
@@ -101,7 +101,7 @@ pub async fn ingest_dataset(
     responses((status = 200, body = Vec<SymbolOnly>))
 )]
 #[instrument(skip(state))]
-pub async fn list_ready_symbols(
+pub async fn get_ready_symbols(
     Extension(state): Extension<AppState>,
 ) -> ApiResult<Json<Vec<SymbolOnly>>> {
     let symbols = state.ingest_service.list_ready_symbols().await?;
@@ -115,12 +115,14 @@ pub async fn list_ready_symbols(
     responses((status = 200, body = Vec<IntervalOnly>))
 )]
 #[instrument(skip(state), fields(symbol = %symbol))]
-pub async fn list_ready_intervals(
+pub async fn get_ready_intervals(
     Extension(state): Extension<AppState>,
     Path(symbol): Path<String>,
 ) -> ApiResult<Json<Vec<IntervalOnly>>> {
     let intervals = state.ingest_service.list_ready_intervals(&symbol).await?;
-    Ok(Json(intervals.into_iter().map(IntervalOnly::from).collect()))
+    Ok(Json(
+        intervals.into_iter().map(IntervalOnly::from).collect(),
+    ))
 }
 
 #[utoipa::path(
@@ -138,9 +140,11 @@ pub async fn get_symbol_interval_range(
     Path(path): Path<(String, String)>,
 ) -> ApiResult<Json<RangeResponse>> {
     let (symbol, interval) = path;
-    let range = state
-        .ingest_service
-        .get_symbol_interval_range(&symbol, &interval)
-        .await?;
+    let range = state.ingest_service.get_range(&symbol, &interval).await?;
     Ok(Json(RangeResponse::from(range)))
 }
+
+// Manual tests:
+// curl -s localhost:3001/api/v1/datasets/symbols
+// curl -s localhost:3001/api/v1/datasets/BTCUSDT/intervals
+// curl -s localhost:3001/api/v1/datasets/BTCUSDT/1m/range

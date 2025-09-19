@@ -1,5 +1,5 @@
-use uuid::Uuid;
 use chrono::Utc;
+use uuid::Uuid;
 
 use crate::{
     domain::{models::DatasetMetadata, traits::MarketIngestor},
@@ -61,7 +61,8 @@ impl MarketIngestor for DuckDbIngestRepo {
 
     async fn list_datasets(&self) -> Result<Vec<DatasetMetadata>, AppError> {
         let pool = self.pool.clone();
-        pool.with_conn_async(|conn| ingest_sql::list_datasets_query(conn)).await
+        pool.with_conn_async(|conn| ingest_sql::list_datasets_query(conn))
+            .await
     }
 
     async fn ingest_dataset(&self, dataset_id: Uuid) -> Result<(), AppError> {
@@ -109,5 +110,34 @@ impl MarketIngestor for DuckDbIngestRepo {
         .await?;
 
         Ok(())
+    }
+
+    async fn list_ready_symbols(&self) -> Result<Vec<String>, AppError> {
+        let pool = self.pool.clone();
+        pool.with_conn_async(|conn| ingest_sql::list_ready_dataset_symbols(conn))
+            .await
+    }
+
+    async fn list_ready_intervals(&self, symbol: &str) -> Result<Vec<String>, AppError> {
+        let pool = self.pool.clone();
+        let symbol = symbol.to_string();
+        pool.with_conn_async(move |conn| ingest_sql::list_ready_intervals_for_symbol(conn, &symbol))
+            .await
+    }
+
+    async fn get_range(&self, symbol: &str, interval: &str) -> Result<(i64, i64), AppError> {
+        let pool = self.pool.clone();
+        let symbol = symbol.to_string();
+        let interval = interval.to_string();
+        let maybe_range = pool
+            .with_conn_async(move |conn| {
+                ingest_sql::get_range_for_symbol_interval(conn, &symbol, &interval)
+            })
+            .await?;
+        maybe_range.ok_or_else(|| {
+            AppError::NotFound(format!(
+                "range for symbol {symbol} interval {interval} not found"
+            ))
+        })
     }
 }

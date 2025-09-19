@@ -12,9 +12,9 @@ use crate::dto;
         crate::api::v1::datasets::register_dataset,
         crate::api::v1::datasets::list_datasets,
         crate::api::v1::datasets::ingest_dataset,
-        crate::api::v1::datasets::dataset_symbols,         // GET /api/v1/datasets/symbols
-        crate::api::v1::datasets::dataset_intervals,       // GET /api/v1/datasets/:symbol/intervals
-        crate::api::v1::datasets::dataset_range,           // GET /api/v1/datasets/:symbol/:interval/range
+        crate::api::v1::datasets::get_ready_symbols,       // GET /api/v1/datasets/symbols
+        crate::api::v1::datasets::get_ready_intervals,     // GET /api/v1/datasets/:symbol/intervals
+        crate::api::v1::datasets::get_symbol_interval_range, // GET /api/v1/datasets/:symbol/:interval/range
         // Sessions
         crate::api::v1::sessions::create_session,
         crate::api::v1::sessions::list_sessions,
@@ -45,6 +45,9 @@ use crate::dto;
             dto::market::KlinesParams,
             dto::datasets::CreateDatasetRequest,
             dto::datasets::DatasetResponse,
+            dto::datasets::SymbolOnly,
+            dto::datasets::IntervalOnly,
+            dto::datasets::RangeResponse,
             dto::sessions::CreateSessionRequest,
             dto::sessions::SessionResponse,
             dto::orders::NewOrderRequest,

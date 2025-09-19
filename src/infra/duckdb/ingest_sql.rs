@@ -102,19 +102,10 @@ pub fn insert_klines_chunk(
                     close = excluded.close,
                     volume = excluded.volume,
                     close_time = excluded.close_time",
-                params![
-                    symbol,
-                    interval,
-                    open_time,
-                    open,
-                    high,
-                    low,
-                    close,
-                    volume,
-                    close_time
-                ],
+                params![symbol, interval, open_time, open, high, low, close, volume, close_time],
             )
-            .map_err(|e| AppError::Database(format!("insert kline failed: {e}")))? as i64;
+            .map_err(|e| AppError::Database(format!("insert kline failed: {e}")))?
+            as i64;
 
         affected_total += affected;
 
@@ -236,9 +227,9 @@ pub fn list_datasets_query(conn: &Connection) -> Result<Vec<DatasetMetadata>, Ap
     Ok(out)
 }
 
-/* =========================
-   Progreso de ingesta (UI)
-   ========================= */
+// =========================
+// Progreso de ingesta (UI)
+// =========================
 
 pub fn progress_init(
     conn: &Connection,
@@ -274,16 +265,23 @@ pub fn progress_upsert_chunk(
     Ok(())
 }
 
-/* =========================
-   Endpoints de datasets (ready) para Sessions UI
-   ========================= */
+// =========================
+// Endpoints de datasets (ready) para Sessions UI
+// =========================
 
 pub fn list_ready_dataset_symbols(conn: &Connection) -> Result<Vec<String>, AppError> {
     let mut stmt = conn
         .prepare(
-            "SELECT DISTINCT symbol
-               FROM datasets
-              WHERE status = 'ready'
+            "WITH ready(symbol) AS (
+                 SELECT DISTINCT symbol
+                   FROM datasets
+                  WHERE status = 'ready'
+             )
+             SELECT symbol FROM ready
+             UNION
+             SELECT DISTINCT symbol
+               FROM klines
+              WHERE NOT EXISTS (SELECT 1 FROM ready)
               ORDER BY symbol",
         )
         .map_err(|e| AppError::Database(format!("prepare ready symbols failed: {e}")))?;
