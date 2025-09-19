@@ -17,11 +17,11 @@ use crate::{
 pub fn router() -> Router {
     Router::new()
         .route("/api/v1/sessions", post(create_session).get(list_sessions))
-        .route("/api/v1/sessions/{id}", get(get_session))
-        .route("/api/v1/sessions/{id}/start", post(start_session))
-        .route("/api/v1/sessions/{id}/pause", post(pause_session))
-        .route("/api/v1/sessions/{id}/resume", post(resume_session))
-        .route("/api/v1/sessions/{id}/seek", post(seek_session))
+        .route("/api/v1/sessions/:id", get(get_session))
+        .route("/api/v1/sessions/:id/start", post(start_session))
+        .route("/api/v1/sessions/:id/pause", post(pause_session))
+        .route("/api/v1/sessions/:id/resume", post(resume_session))
+        .route("/api/v1/sessions/:id/seek", post(seek_session))
 }
 
 #[utoipa::path(
