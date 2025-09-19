@@ -36,6 +36,9 @@ pub trait MarketIngestor: Send + Sync {
     ) -> Result<DatasetMetadata, AppError>;
     async fn list_datasets(&self) -> Result<Vec<DatasetMetadata>, AppError>;
     async fn ingest_dataset(&self, dataset_id: Uuid) -> Result<(), AppError>;
+    async fn list_ready_symbols(&self) -> Result<Vec<String>, AppError>;
+    async fn list_ready_intervals(&self, symbol: &str) -> Result<Vec<String>, AppError>;
+    async fn get_range(&self, symbol: &str, interval: &str) -> Result<(i64, i64), AppError>;
 }
 
 #[async_trait]
@@ -72,7 +75,8 @@ pub trait AccountsRepo: Send + Sync {
 
 #[async_trait]
 pub trait Clock: Send + Sync {
-    async fn init_session(&self, session_id: Uuid, start_time: TimestampMs) -> Result<(), AppError>;
+    async fn init_session(&self, session_id: Uuid, start_time: TimestampMs)
+        -> Result<(), AppError>;
     async fn now(&self, session_id: Uuid) -> Result<TimestampMs, AppError>;
     async fn set_speed(&self, session_id: Uuid, speed: Speed) -> Result<(), AppError>;
     async fn advance_to(&self, session_id: Uuid, to: TimestampMs) -> Result<(), AppError>;

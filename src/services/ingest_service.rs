@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::domain::{models::DatasetMetadata, traits::MarketIngestor};
 use super::ServiceResult;
+use crate::domain::{models::DatasetMetadata, traits::MarketIngestor};
 
 #[derive(Clone)]
 pub struct IngestService {
@@ -32,5 +32,17 @@ impl IngestService {
 
     pub async fn ingest_dataset(&self, dataset_id: Uuid) -> ServiceResult<()> {
         self.ingestor.ingest_dataset(dataset_id).await
+    }
+
+    pub async fn list_ready_symbols(&self) -> ServiceResult<Vec<String>> {
+        self.ingestor.list_ready_symbols().await
+    }
+
+    pub async fn list_ready_intervals(&self, symbol: &str) -> ServiceResult<Vec<String>> {
+        self.ingestor.list_ready_intervals(symbol).await
+    }
+
+    pub async fn get_range(&self, symbol: &str, interval: &str) -> ServiceResult<(i64, i64)> {
+        self.ingestor.get_range(symbol, interval).await
     }
 }
