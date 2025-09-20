@@ -57,6 +57,11 @@ impl ReplayService {
         }
     }
 
+    async fn finalize_run(&self, session_id: Uuid) {
+        self.broadcaster.close(session_id).await;
+        let _ = self.tasks.write().await.remove(&session_id);
+    }
+
     async fn run_session(self: Arc<Self>, session: SessionConfig, from: TimestampMs) {
         info!(session_id = %session.session_id, "starting replay session");
 
@@ -81,6 +86,7 @@ impl ReplayService {
                 }
                 Err(err) => {
                     error!(%err, "failed to load klines for symbol");
+                    self.finalize_run(session.session_id).await;
                     return;
                 }
             }
@@ -110,6 +116,7 @@ impl ReplayService {
                     Ok(_) => break,
                     Err(err) => {
                         error!(%err, "clock lookup failed");
+                        self.finalize_run(session.session_id).await;
                         return;
                     }
                 }
@@ -190,7 +197,7 @@ impl ReplayService {
             error!(%err, "failed to pause clock at end");
         }
 
-        let _ = self.tasks.write().await.remove(&session.session_id);
+        self.finalize_run(session.session_id).await;
     }
 
     async fn collect_klines(
@@ -258,12 +265,21 @@ impl ReplayEngine for ReplayService {
     async fn start(&self, session: SessionConfig) -> Result<(), AppError> {
         self.cancel_task(session.session_id).await;
 
+        self.clock
+            .init_session(session.session_id, session.start_time)
+            .await?;
+        {
+            let mut guard = self.latest.write().await;
+            guard.retain(|(id, _), _| *id != session.session_id);
+        }
+        self.broadcaster.close(session.session_id).await;
+
         let service = Arc::new(self.clone_inner());
-        let from = match self.clock.now(session.session_id).await {
-            Ok(now) => TimestampMs(now.0.max(session.start_time.0)),
-            Err(_) => session.start_time,
-        };
-        let handle = tokio::spawn(service.clone().run_session(session.clone(), from));
+        let handle = tokio::spawn(
+            service
+                .clone()
+                .run_session(session.clone(), session.start_time),
+        );
 
         self.tasks.write().await.insert(session.session_id, handle);
         Ok(())

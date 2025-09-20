@@ -81,12 +81,38 @@ impl SessionsService {
 
     pub async fn start_session(&self, session_id: Uuid) -> ServiceResult<SessionConfig> {
         let session = self.sessions_repo.get(session_id).await?;
+
+        match session.status {
+            SessionStatus::Running => {
+                return Err(crate::error::AppError::Conflict(
+                    "session is already running".into(),
+                ))
+            }
+            SessionStatus::Created | SessionStatus::Paused | SessionStatus::Ended => {}
+        }
+
+        self.clock
+            .init_session(session_id, session.start_time)
+            .await?;
         self.clock.set_speed(session_id, session.speed).await?;
-        self.clock.resume(session_id).await?;
-        self.replay.start(session.clone()).await?;
-        self.sessions_repo
+
+        let previous_status = session.status.clone();
+        let running_session = self
+            .sessions_repo
             .update_status(session_id, SessionStatus::Running)
-            .await
+            .await?;
+
+        if let Err(err) = self.replay.start(running_session.clone()).await {
+            let _ = self
+                .sessions_repo
+                .update_status(session_id, previous_status)
+                .await;
+            return Err(err);
+        }
+
+        self.clock.resume(session_id).await?;
+
+        Ok(running_session)
     }
 
     pub async fn pause_session(&self, session_id: Uuid) -> ServiceResult<SessionConfig> {
