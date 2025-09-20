@@ -1,5 +1,8 @@
 // src/infra/clock.rs
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::Arc,
+};
 
 use async_trait::async_trait;
 use tokio::sync::RwLock;
@@ -31,13 +34,26 @@ impl SimulatedClock {
         }
     }
 
-    pub async fn init_session(&self, session_id: Uuid, start_time: TimestampMs) -> Result<(), AppError> {
+    pub async fn init_session(
+        &self,
+        session_id: Uuid,
+        start_time: TimestampMs,
+    ) -> Result<(), AppError> {
         let mut guard = self.inner.write().await;
-        guard.entry(session_id).or_insert(ClockState {
-            current_time: start_time,
-            speed: self.default_speed,
-            paused: true,
-        });
+        match guard.entry(session_id) {
+            Entry::Occupied(mut entry) => {
+                let state = entry.get_mut();
+                state.current_time = start_time;
+                state.paused = true;
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(ClockState {
+                    current_time: start_time,
+                    speed: self.default_speed,
+                    paused: true,
+                });
+            }
+        }
         Ok(())
     }
 }
@@ -45,6 +61,7 @@ impl SimulatedClock {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::traits::Clock;
     use tokio::runtime::Runtime;
 
     #[test]
@@ -53,7 +70,10 @@ mod tests {
         rt.block_on(async {
             let clock = SimulatedClock::new(Speed(2.0));
             let session_id = Uuid::new_v4();
-            clock.init_session(session_id, TimestampMs(0)).await.unwrap();
+            clock
+                .init_session(session_id, TimestampMs(0))
+                .await
+                .unwrap();
             clock.resume(session_id).await.unwrap();
             clock
                 .advance_to(session_id, TimestampMs(500))
@@ -69,13 +89,26 @@ mod tests {
 
 #[async_trait]
 impl crate::domain::traits::Clock for SimulatedClock {
-    async fn init_session(&self, session_id: Uuid, start_time: TimestampMs) -> Result<(), AppError> {
+    async fn init_session(
+        &self,
+        session_id: Uuid,
+        start_time: TimestampMs,
+    ) -> Result<(), AppError> {
         let mut guard = self.inner.write().await;
-        guard.entry(session_id).or_insert(ClockState {
-            current_time: start_time,
-            speed: self.default_speed,
-            paused: true,
-        });
+        match guard.entry(session_id) {
+            Entry::Occupied(mut entry) => {
+                let state = entry.get_mut();
+                state.current_time = start_time;
+                state.paused = true;
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(ClockState {
+                    current_time: start_time,
+                    speed: self.default_speed,
+                    paused: true,
+                });
+            }
+        }
         Ok(())
     }
 

@@ -10,12 +10,16 @@ use crate::{
         clock::SimulatedClock,
         config::AppConfig,
         duckdb::{db::DuckDbPool, ingest_repo::DuckDbIngestRepo, market_repo::DuckDbMarketStore},
-        repos::memory::{MemoryAccountsRepo, MemoryOrdersRepo, MemorySessionsRepo},
+        repos::{
+            duckdb::DuckDbSessionsRepo,
+            memory::{MemoryAccountsRepo, MemoryOrdersRepo},
+        },
         ws::broadcaster::SessionBroadcaster,
     },
     services::{
-        account_service::AccountService, market_service::MarketService, orders_service::OrdersService,
-        replay_service::ReplayService, sessions_service::SessionsService, IngestService,
+        account_service::AccountService, market_service::MarketService,
+        orders_service::OrdersService, replay_service::ReplayService,
+        sessions_service::SessionsService, IngestService,
     },
 };
 
@@ -43,17 +47,21 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
         let count = |table: &str| -> Result<i64, crate::error::AppError> {
             let mut stmt = conn
                 .prepare(&format!("SELECT COUNT(*) FROM {}", table))
-                .map_err(|e| crate::error::AppError::Database(format!("prepare count {}: {e}", table)))?;
-            let mut rows = stmt
-                .query([])
-                .map_err(|e| crate::error::AppError::Database(format!("query count {}: {e}", table)))?;
+                .map_err(|e| {
+                    crate::error::AppError::Database(format!("prepare count {}: {e}", table))
+                })?;
+            let mut rows = stmt.query([]).map_err(|e| {
+                crate::error::AppError::Database(format!("query count {}: {e}", table))
+            })?;
             let row = rows
                 .next()
                 .map_err(|e| crate::error::AppError::Database(format!("row count {}: {e}", table)))?
-                .ok_or_else(|| crate::error::AppError::Database(format!("no row for count {}", table)))?;
-            let n: i64 = row
-                .get(0)
-                .map_err(|e| crate::error::AppError::Database(format!("get count {}: {e}", table)))?;
+                .ok_or_else(|| {
+                    crate::error::AppError::Database(format!("no row for count {}", table))
+                })?;
+            let n: i64 = row.get(0).map_err(|e| {
+                crate::error::AppError::Database(format!("get count {}: {e}", table))
+            })?;
             Ok(n)
         };
         Ok::<_, crate::error::AppError>((count("datasets")?, count("klines")?, count("symbols")?))
@@ -69,7 +77,7 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
     let ingestor: Arc<dyn MarketIngestor> = Arc::new(DuckDbIngestRepo::new(pool.clone()));
     let ingest_service = Arc::new(IngestService::new(ingestor.clone()));
 
-    let sessions_repo: Arc<dyn SessionsRepo> = Arc::new(MemorySessionsRepo::new());
+    let sessions_repo: Arc<dyn SessionsRepo> = Arc::new(DuckDbSessionsRepo::new(pool.clone())?);
     let orders_repo: Arc<dyn OrdersRepo> = Arc::new(MemoryOrdersRepo::new());
     let accounts_repo: Arc<dyn AccountsRepo> = Arc::new(MemoryAccountsRepo::new());
 
@@ -86,8 +94,11 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
     ));
     let replay_engine: Arc<dyn crate::domain::traits::ReplayEngine> = replay_service.clone();
 
-    let account_service =
-        Arc::new(AccountService::new(accounts_repo.clone(), "USDT".to_string(), 10_000.0));
+    let account_service = Arc::new(AccountService::new(
+        accounts_repo.clone(),
+        "USDT".to_string(),
+        10_000.0,
+    ));
 
     let orders_service = Arc::new(OrdersService::new(
         orders_repo.clone(),
@@ -96,8 +107,11 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
         replay_service.clone(),
     ));
 
-    let sessions_service =
-        Arc::new(SessionsService::new(sessions_repo.clone(), clock_trait.clone(), replay_engine));
+    let sessions_service = Arc::new(SessionsService::new(
+        sessions_repo.clone(),
+        clock_trait.clone(),
+        replay_engine,
+    ));
 
     let state = AppState {
         config: config.clone(),
