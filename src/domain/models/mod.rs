@@ -112,6 +112,7 @@ pub struct SessionConfig {
     pub start_time: TimestampMs,
     pub end_time: TimestampMs,
     pub speed: Speed,
+    pub enabled: bool,
     pub status: SessionStatus,
     pub seed: u64,
     pub created_at: TimestampMs,

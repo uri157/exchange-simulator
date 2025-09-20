@@ -24,6 +24,9 @@ use crate::dto;
         crate::api::v1::sessions::pause_session,
         crate::api::v1::sessions::resume_session,
         crate::api::v1::sessions::seek_session,
+        crate::api::v1::sessions::enable_session,
+        crate::api::v1::sessions::disable_session,
+        crate::api::v1::sessions::delete_session,
         // Orders
         crate::api::v1::orders::new_order,
         crate::api::v1::orders::get_order,
@@ -51,6 +54,7 @@ use crate::dto;
             dto::datasets::RangeResponse,
             dto::sessions::CreateSessionRequest,
             dto::sessions::SessionResponse,
+            dto::sessions::UpdateSessionEnabledRequest,
             dto::orders::NewOrderRequest,
             dto::orders::NewOrderResponse,
             dto::orders::OrderResponse,

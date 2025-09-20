@@ -3,10 +3,14 @@ use std::sync::Arc;
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::domain::{
-    models::{SessionConfig, SessionStatus},
-    traits::{Clock, ReplayEngine, SessionsRepo},
-    value_objects::{Interval, Speed, TimestampMs},
+use crate::{
+    domain::{
+        models::{SessionConfig, SessionStatus},
+        traits::{Clock, ReplayEngine, SessionsRepo},
+        value_objects::{Interval, Speed, TimestampMs},
+    },
+    error::AppError,
+    infra::ws::broadcaster::SessionBroadcaster,
 };
 
 use super::ServiceResult;
@@ -15,6 +19,7 @@ pub struct SessionsService {
     sessions_repo: Arc<dyn SessionsRepo>,
     clock: Arc<dyn Clock>,
     replay: Arc<dyn ReplayEngine>,
+    broadcaster: SessionBroadcaster,
 }
 
 impl SessionsService {
@@ -22,11 +27,13 @@ impl SessionsService {
         sessions_repo: Arc<dyn SessionsRepo>,
         clock: Arc<dyn Clock>,
         replay: Arc<dyn ReplayEngine>,
+        broadcaster: SessionBroadcaster,
     ) -> Self {
         Self {
             sessions_repo,
             clock,
             replay,
+            broadcaster,
         }
     }
 
@@ -62,6 +69,7 @@ impl SessionsService {
             start_time,
             end_time,
             speed,
+            enabled: true,
             status: SessionStatus::Created,
             seed,
             created_at: now,
@@ -81,6 +89,8 @@ impl SessionsService {
 
     pub async fn start_session(&self, session_id: Uuid) -> ServiceResult<SessionConfig> {
         let session = self.sessions_repo.get(session_id).await?;
+
+        ensure_enabled(&session)?;
 
         match session.status {
             SessionStatus::Running => {
@@ -116,6 +126,9 @@ impl SessionsService {
     }
 
     pub async fn pause_session(&self, session_id: Uuid) -> ServiceResult<SessionConfig> {
+        let session = self.sessions_repo.get(session_id).await?;
+        ensure_enabled(&session)?;
+
         self.clock.pause(session_id).await?;
         self.replay.pause(session_id).await?;
         self.sessions_repo
@@ -124,6 +137,9 @@ impl SessionsService {
     }
 
     pub async fn resume_session(&self, session_id: Uuid) -> ServiceResult<SessionConfig> {
+        let session = self.sessions_repo.get(session_id).await?;
+        ensure_enabled(&session)?;
+
         self.clock.resume(session_id).await?;
         self.replay.resume(session_id).await?;
         self.sessions_repo
@@ -137,6 +153,8 @@ impl SessionsService {
         to: TimestampMs,
     ) -> ServiceResult<SessionConfig> {
         let session = self.sessions_repo.get(session_id).await?;
+
+        ensure_enabled(&session)?;
 
         if to.0 < session.start_time.0 || to.0 > session.end_time.0 {
             return Err(crate::error::AppError::Validation(
@@ -163,4 +181,58 @@ impl SessionsService {
     pub async fn get_session(&self, session_id: Uuid) -> ServiceResult<SessionConfig> {
         self.sessions_repo.get(session_id).await
     }
+
+    pub async fn enable_session(&self, session_id: Uuid) -> ServiceResult<SessionConfig> {
+        let session = self.sessions_repo.get(session_id).await?;
+        if session.enabled {
+            return Ok(session);
+        }
+
+        self.sessions_repo.set_enabled(session_id, true).await?;
+        self.sessions_repo.get(session_id).await
+    }
+
+    pub async fn disable_session(&self, session_id: Uuid) -> ServiceResult<SessionConfig> {
+        let session = self.sessions_repo.get(session_id).await?;
+
+        self.replay.stop(session_id).await?;
+
+        if matches!(session.status, SessionStatus::Running) {
+            let _ = self
+                .sessions_repo
+                .update_status(session_id, SessionStatus::Paused)
+                .await?;
+        }
+
+        self.sessions_repo.set_enabled(session_id, false).await?;
+        self.broadcaster.close(session_id).await;
+
+        self.sessions_repo.get(session_id).await
+    }
+
+    pub async fn delete_session(&self, session_id: Uuid) -> ServiceResult<()> {
+        // Ensure it exists (and fetch current status for potential cleanup)
+        let session = self.sessions_repo.get(session_id).await?;
+
+        self.replay.stop(session_id).await?;
+
+        if matches!(session.status, SessionStatus::Running) {
+            let _ = self
+                .sessions_repo
+                .update_status(session_id, SessionStatus::Paused)
+                .await?;
+        }
+
+        self.sessions_repo.delete(session_id).await?;
+        self.broadcaster.close(session_id).await;
+
+        Ok(())
+    }
+}
+
+fn ensure_enabled(session: &SessionConfig) -> ServiceResult<()> {
+    if !session.enabled {
+        return Err(AppError::Conflict("session is disabled".into()));
+    }
+    Ok(())
 }

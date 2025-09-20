@@ -80,6 +80,7 @@ async fn ingest_replay_and_order_flow() {
         sessions_repo.clone(),
         clock_trait.clone(),
         replay_engine.clone(),
+        broadcaster.clone(),
     ));
 
     let session = sessions_service
@@ -123,10 +124,8 @@ async fn ingest_replay_and_order_flow() {
         .get_account(session.session_id)
         .await
         .unwrap();
-    assert!(
-        account
-            .balances
-            .iter()
-            .any(|balance| balance.asset == "BTC" && balance.free.0 > 0.0)
-    );
+    assert!(account
+        .balances
+        .iter()
+        .any(|balance| balance.asset == "BTC" && balance.free.0 > 0.0));
 }
