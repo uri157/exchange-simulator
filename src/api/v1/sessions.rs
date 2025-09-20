@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, Query},
     http::StatusCode,
-    routing::{delete, get, patch, post},
+    routing::{get, patch, post},
     Extension, Json, Router,
 };
 use std::str::FromStr;

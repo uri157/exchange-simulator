@@ -33,6 +33,7 @@ async-trait = "0.1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 anyhow = "1"
+tungstenite = "0.23"
 
 [dev-dependencies]
 # Compat con axum 0.6/hyper 0.14

@@ -1,365 +1,302 @@
-# Exchange Simulator (Rust) — README
+# Exchange Simulator (Rust) — README para IA
 
-Un “exchange simulado” para **backtesting** y **replay** de datos de mercado estilo Binance.
-Sirve datos históricos desde **DuckDB**, simula **órdenes** (market/limit), mantiene **cuentas** por sesión, expone **HTTP + WebSocket**, y documenta la API con **Swagger (utoipa)**.
+Simulador de exchange para **replay/backtesting** con datos históricos en **DuckDB**, **órdenes simuladas** (market/limit), **cuentas por sesión**, **API HTTP estilo Binance** y **WebSocket** de velas.
 
-> **Objetivo:** crear un entorno determinista para someter bots a años de datos a distintas velocidades, reproducir escenarios y validar estrategias sin tocar Binance real.
-
----
-
-## TL;DR (para una IA)
-
-* **Arquitectura hexagonal**: `domain` (modelos/traits), `services` (reglas), `infra` (DuckDB, clock, WS), `api` (axum), `dto` (wire models), `app` (bootstrap/router), `oas` (OpenAPI).
-* **Datos**: DuckDB almacena `datasets`, `klines` y `symbols`. Las órdenes, cuentas y sesiones están (hoy) **en memoria**; los trades se guardan en un buffer en memoria.
-* **Flujo típico**:
-
-  1. Registrar un dataset (ruta + formato CSV/Parquet).
-  2. Ingestar a DuckDB (carga `klines` y deduce `symbols`).
-  3. Crear una sesión (símbolos, intervalo, rango temporal, velocidad).
-  4. Iniciar/pausar/reanudar/seek de la sesión (replay).
-  5. Consumir `/api/v3/klines` y colocar órdenes `/api/v3/order`.
-* **Swagger**: `http://localhost:<PORT>/swagger-ui`.
-* **Limitaciones actuales**: matching simplificado (market llena al último close; limit llena si el precio cruza el OHLC del kline actual), sin persistence de órdenes/trades/cuentas, sin fees reales.
+> **Objetivo:** correr bots contra años de datos a distintas velocidades, reproducir escenarios deterministas y validar estrategias sin tocar Binance real.
 
 ---
 
-## Requisitos
+## TL;DR (para empezar ya)
 
-* Rust 1.87+
-* DuckDB (se usa crate con **bundled**)
-* Linux/Mac/WSL ok
+* **WS expuesto:** `GET /ws?sessionId=<uuid>&streams=kline@1m:ETHBTC`
+* **REST clave:**
+
+  * `GET /api/v1/exchangeInfo` (símbolos locales)
+  * `GET /api/v1/market/klines` (**o** `GET /api/v3/klines`) — klines desde DuckDB
+  * Sesiones: `POST /api/v1/sessions`, `GET /api/v1/sessions`, `POST /{id}/start|pause|resume|seek`
+  * Órdenes (simuladas): `POST /api/v3/order`, `GET /api/v3/account`, etc.
+* **OpenAPI JSON:** `/api-docs/openapi.json` (la UI de Swagger vive en el **front**)
+* **Persistencia actual:** DuckDB para datos de mercado; sesiones/órdenes/cuentas en **memoria**
+* **Matching simple:** MARKET llena al último close; LIMIT llena si cruza OHLC del kline actual
+* **CORS:** permisivo en dev
 
 ---
 
-## Configuración (.env ejemplo)
+## Arquitectura (mapa mental)
 
-Crea un archivo `.env` en la raíz:
+* **domain/**: modelos y puertos (traits)
+* **services/**: casos de uso (market, sessions, replay, orders)
+* **infra/**: adaptadores (DuckDB, reloj, repos en memoria, broadcaster WS)
+* **api/**: controladores Axum (HTTP/WS)
+* **dto/**: contratos de request/response (serde + utoipa)
+* **app/**: wiring/inyección y router (CORS/Trace/OpenAPI)
+* **oas.rs**: definición OpenAPI
+
+```
+src/
+├─ api/v1/ (market.rs, sessions.rs, orders.rs, datasets.rs, ws.rs)
+├─ app/ (bootstrap.rs, router.rs)
+├─ domain/ (models.rs, traits.rs, value_objects.rs)
+├─ dto/ (market.rs, sessions.rs, orders.rs, datasets.rs, ws.rs)
+├─ infra/ (duckdb/, ws/, clock.rs, repos/)
+├─ services/ (market_service.rs, replay_service.rs, ...)
+└─ oas.rs
+```
+
+---
+
+## Configuración
+
+Crear `.env` en la raíz (nombres esperados por `infra/config.rs`):
 
 ```env
 # HTTP
 PORT=3001
 
-# Sesiones / reloj
-DEFAULT_SPEED=1.0          # multiplicador del tiempo simulado
-MAX_SESSION_CLIENTS=100
-
-# Cuentas
-DEFAULT_QUOTE=USDT
-INITIAL_QUOTE_BALANCE=10000
-
 # Datos
 DATA_DIR=./data
-DUCKDB_PATH=./data/market.duckdb   # si tu pool lo soporta; sino se usará el default del código
-```
+DUCKDB_PATH=./data/market.duckdb
 
-> Los nombres exactos dependen de `infra/config.rs`. Si alguno difiere, ajusta este ejemplo a lo que parsea ese archivo.
+# WebSocket
+WS_BUFFER=1024
+
+# Reloj / sesiones
+DEFAULT_SPEED=1.0
+MAX_SESSION_CLIENTS=100
+
+# Cuentas simuladas
+DEFAULT_QUOTE=USDT
+INITIAL_QUOTE_BALANCE=10000
+```
 
 ---
 
-## Comandos útiles
-
-### Desarrollo
+## Ejecutar
 
 ```bash
-# Compilar y correr
+# Compilar + correr
 cargo run
 
-# Solo compilar
-cargo build
-
-# Tests
-cargo test
-
-# Lints/format
-cargo fmt
-cargo clippy
-
-# Árbol filtrado (útil para IA)
-tree -a --prune \
-  -I 'target|.git|.idea|.vscode|node_modules|__pycache__|.DS_Store|*.log|*.tmp' \
-  -P '*.rs|Cargo.toml|Cargo.lock|README*|*.yml|*.yaml|.env*'
+# Con logs útiles
+RUST_LOG=info,tower_http=info,exchange_simulator=debug cargo run
 ```
 
-### “Llenar” la base con datos (vía API)
+Salida esperada:
 
-1. **Registrar dataset** (indica nombre, ruta y formato):
-
-```bash
-curl -sS -X POST "http://localhost:3001/api/v1/datasets" \
-  -H "content-type: application/json" \
-  -d '{
-    "name": "binance_btcusdt_1m_2019_2021",
-    "path": "./data/btcusdt_1m.parquet",
-    "format": "parquet"
-  }'
-# → devuelve { id, name, basePath, format, createdAt }
 ```
-
-2. **Ingestar** (carga a DuckDB `klines` y puebla `symbols`):
-
-```bash
-DATASET_ID="<uuid devuelto arriba>"
-curl -sS -X POST "http://localhost:3001/api/v1/datasets/${DATASET_ID}/ingest"
-# → 204 No Content
-```
-
-3. **Listar datasets**:
-
-```bash
-curl -sS "http://localhost:3001/api/v1/datasets"
+INFO opening DuckDB duckdb_path=.../data/market.duckdb
+INFO duckdb warmup datasets=... klines=... symbols=...
+INFO starting exchange simulator server addr=0.0.0.0:3001
 ```
 
 ---
 
-## Endpoints
+## API de Mercado (local/DuckDB)
 
-> **Swagger UI**: `http://localhost:3001/swagger-ui`
-> **OpenAPI JSON**: `/api-docs/openapi.json`
+### Exchange info (símbolos)
 
-### Market
+```
+GET /api/v1/exchangeInfo
+```
 
-* `GET /api/v1/exchangeInfo` → **Funcional**. Retorna símbolos activos (de DuckDB).
-* `GET /api/v3/klines?symbol=BTCUSDT&interval=1m&startTime=...&endTime=...&limit=...` → **Funcional**. Devuelve klines históricos desde DuckDB.
+### Klines desde DuckDB
 
-### Datasets
+Dos rutas equivalentes:
 
-* `POST /api/v1/datasets` → **Funcional**. Registrar dataset `{ name, path, format: csv|parquet }`.
-* `GET /api/v1/datasets` → **Funcional**. Lista datasets registrados.
-* `POST /api/v1/datasets/{id}/ingest` → **Funcional**. Ingesta a tablas (`klines`, `symbols`).
+```
+GET /api/v1/market/klines?symbol=ETHBTC&interval=1m&startTime=1757833200000&endTime=1757839200000&limit=1000
+GET /api/v3/klines?symbol=ETHBTC&interval=1m&startTime=...&endTime=...&limit=...
+```
 
-### Sessions (replay)
-
-* `POST /api/v1/sessions` → **Funcional**. Crea sesión `{ symbols[], interval, startTime, endTime, speed, seed? }`.
-* `GET /api/v1/sessions` → **Funcional**. Lista sesiones.
-* `GET /api/v1/sessions/{id}` → **Funcional**. Estado de sesión.
-* `POST /api/v1/sessions/{id}/start` → **Funcional**. Setea velocidad y resume.
-* `POST /api/v1/sessions/{id}/pause` → **Funcional**.
-* `POST /api/v1/sessions/{id}/resume` → **Funcional**.
-* `POST /api/v1/sessions/{id}/seek?to=TIMESTAMP_MS` → **Funcional**. Mueve el reloj y el replay al timestamp dado.
-
-### Orders / Account (simuladas)
-
-* `POST /api/v3/order` → **Simulada**. Crea orden **market** o **limit**.
-
-  * *Market*: llena al último `close` del kline actual.
-  * *Limit*: llena si `buy: limit >= low`, `sell: limit <= high` del kline actual.
-* `GET /api/v3/order?sessionId=...&orderId=...|origClientOrderId=...` → **Funcional** (memoria).
-* `DELETE /api/v3/order?sessionId=...&orderId=...|origClientOrderId=...` → **Funcional** (memoria).
-* `GET /api/v3/openOrders?sessionId=...&symbol?=...` → **Funcional** (memoria).
-* `GET /api/v3/myTrades?sessionId=...&symbol=...` → **Funcional** (memoria).
-* `GET /api/v3/account?sessionId=...` → **Funcional** (memoria).
-
-  * Al primer uso, crea la cuenta con `DEFAULT_QUOTE` e `INITIAL_QUOTE_BALANCE`.
-
-> **Notas de simulación**
->
-> * Fees = 0 por ahora.
-> * No hay *partial fills* todavía (aunque el modelo lo permite).
-> * Órdenes/Trades/Cuentas/Sesiones: **in-memory**; reiniciar el proceso las borra.
-> * Matching muy simplificado para testing rápido.
+* `startTime/endTime` en **ms**
+* `interval` usa los del dominio (ej. `1m`, `1h`, `1d`)
 
 ---
 
-## Cómo probar rápido (cURL)
+## Gestión de datasets
+
+```
+POST /api/v1/datasets                 # registrar {name, path, format: csv|parquet}
+POST /api/v1/datasets/{id}/ingest     # ingesta → klines + symbols
+GET  /api/v1/datasets                 # listar
+GET  /api/v1/datasets/symbols         # símbolos disponibles
+GET  /api/v1/datasets/{symbol}/intervals
+GET  /api/v1/datasets/{symbol}/{interval}/range  # { firstOpenTime, lastCloseTime }
+```
+
+---
+
+## Sesiones (replay)
+
+```
+POST /api/v1/sessions                 # crear {symbols[], interval, startTime, endTime, speed, seed?}
+GET  /api/v1/sessions                 # listar
+GET  /api/v1/sessions/{id}            # estado
+POST /api/v1/sessions/{id}/start
+POST /api/v1/sessions/{id}/pause
+POST /api/v1/sessions/{id}/resume
+POST /api/v1/sessions/{id}/seek?to=<ms>
+```
+
+**Notas:**
+
+* El replay emite velas en orden y respeta `[startTime, endTime]`.
+* Puedes **conectar WS** antes de `start`; el server **no** cierra por inactividad.
+
+---
+
+## WebSocket
+
+**Ruta:**
+
+```
+GET /ws?sessionId=<uuid>&streams=<streams>
+```
+
+* `streams`: por ahora `kline@<interval>:<symbol>` (p. ej. `kline@1m:ETHBTC`)
+* Conexiones múltiples por sesión: OK (buffer configurable vía `WS_BUFFER`).
+
+**Mensaje (kline)**
+
+```json
+{
+  "event": "kline",
+  "data": {
+    "symbol": "ETHBTC",
+    "interval": "1m",
+    "openTime": 1758150240000,
+    "closeTime": 1758150299999,
+    "open": 0.03942,
+    "high": 0.03946,
+    "low": 0.03942,
+    "close": 0.03946,
+    "volume": 66.5555
+  },
+  "stream": "kline@1m:ETHBTC"
+}
+```
+
+> **Keepalive:** el servidor **no** impone timeout; si ves `1011 keepalive ping timeout` suele ser del **cliente** (p. ej. script Python). Los navegadores/WS modernos no deberían cortarse.
+
+---
+
+## Órdenes y cuentas (simuladas)
+
+* **Órdenes**
+
+  ```
+  POST /api/v3/order
+  ```
+
+  * MARKET: llena al último `close`
+  * LIMIT:
+
+    * BUY: llena si `limit >= low` del kline actual
+    * SELL: llena si `limit <= high` del kline actual
+
+* **Consultas y cuenta**
+
+  ```
+  GET    /api/v3/order
+  DELETE /api/v3/order
+  GET    /api/v3/openOrders
+  GET    /api/v3/myTrades
+  GET    /api/v3/account?sessionId=...
+  ```
+
+  * La cuenta se inicializa on-demand con `DEFAULT_QUOTE` e `INITIAL_QUOTE_BALANCE`.
+
+> **Persistencia:** por ahora **in-memory** (reiniciar borra). DuckDB solo almacena datasets/klines/symbols.
+
+---
+
+## OpenAPI
+
+* **JSON**: `GET /api-docs/openapi.json`
+  El **front** renderiza la UI (Swagger) consumiendo este JSON.
+
+---
+
+## Recetas de cURL (sanity check rápido)
 
 ```bash
-# 1) Registrar + Ingestar dataset
-curl -sS -X POST http://localhost:3001/api/v1/datasets \
-  -H 'content-type: application/json' \
-  -d '{"name":"btc_1m","path":"./data/btc_1m.parquet","format":"parquet"}' | tee ds.json
-DS_ID=$(jq -r .id ds.json)
-curl -sS -X POST "http://localhost:3001/api/v1/datasets/$DS_ID/ingest"
+# ¿Qué símbolos/intervalos/rango tengo?
+curl -s http://localhost:3001/api/v1/datasets/symbols | jq
+curl -s http://localhost:3001/api/v1/datasets/ETHBTC/intervals | jq
+curl -s http://localhost:3001/api/v1/datasets/ETHBTC/1m/range | jq
 
-# 2) Crear sesión
+# 10 velas de 1m
+START=1757833200000
+END=$(( START + 60000*10 ))
+curl -s "http://localhost:3001/api/v1/market/klines?symbol=ETHBTC&interval=1m&startTime=$START&endTime=$END&limit=1000" | jq length
+curl -s "http://localhost:3001/api/v1/market/klines?symbol=ETHBTC&interval=1m&startTime=$START&endTime=$END&limit=1" | jq '.[0]'
+
+# Crear sesión + start
 curl -sS -X POST http://localhost:3001/api/v1/sessions \
   -H 'content-type: application/json' \
-  -d '{
-        "symbols":["BTCUSDT"],
-        "interval":"1m",
-        "startTime":1577836800000,
-        "endTime":1577923200000,
-        "speed":1.0
-      }' | tee sess.json
+  -d '{"symbols":["ETHBTC"],"interval":"1m","startTime":'$START',"endTime":'$END',"speed":1.0}' | tee sess.json
 SESS_ID=$(jq -r .sessionId sess.json)
-
-# 3) Start
 curl -sS -X POST "http://localhost:3001/api/v1/sessions/$SESS_ID/start"
 
-# 4) Klines
-curl -sS "http://localhost:3001/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=5"
-
-# 5) Orden MARKET BUY 0.01 BTC
-curl -sS -X POST http://localhost:3001/api/v3/order \
-  -H 'content-type: application/json' \
-  -d "{\"session_id\":\"$SESS_ID\",\"symbol\":\"BTCUSDT\",\"side\":\"BUY\",\"type\":\"MARKET\",\"quantity\":0.01}"
-
-# 6) Cuenta
-curl -sS "http://localhost:3001/api/v3/account?sessionId=$SESS_ID"
+# Conectar WS (inspección manual con websocat)
+# websocat "ws://localhost:3001/ws?sessionId=$SESS_ID&streams=kline@1m:ETHBTC"
 ```
 
 ---
 
-## Estructura del proyecto (qué hace cada cosa)
+## Decisiones y límites (para IA)
 
-```
-src/
-├─ api/                 # Adaptadores HTTP (Axum)
-│  ├─ errors.rs         # Manejador de errores/health
-│  ├─ mod.rs            # Router raíz de API
-│  └─ v1/               # Endpoints versión 1
-│     ├─ account.rs     # GET /api/v3/account
-│     ├─ datasets.rs    # POST/GET /api/v1/datasets, POST ingest
-│     ├─ market.rs      # exchangeInfo, klines
-│     ├─ orders.rs      # new/cancel/get/openOrders/myTrades
-│     ├─ sessions.rs    # create/list/get/start/pause/resume/seek
-│     └─ ws.rs          # (WIP) WS por sesión
-├─ app/
-│  ├─ bootstrap.rs      # Inyección de dependencias (repos, servicios)
-│  ├─ router.rs         # Construcción del Router + Swagger
-│  └─ mod.rs
-├─ domain/              # Núcleo: modelos y puertos (traits)
-│  ├─ models.rs         # Kline, Order, Fill, Session, DatasetFormat, etc.
-│  ├─ traits.rs         # MarketStore, MarketIngestor, SessionsRepo, Clock, etc.
-│  └─ value_objects.rs  # Tipos fuertes: Price, Quantity, Interval, Speed, TimestampMs
-├─ dto/                 # Esquemas de entrada/salida API (serde + utoipa)
-│  ├─ account.rs
-│  ├─ datasets.rs
-│  ├─ market.rs
-│  ├─ orders.rs
-│  ├─ sessions.rs
-│  └─ ws.rs
-├─ infra/               # Implementaciones técnicas (adaptadores)
-│  ├─ clock.rs          # Reloj simulado por sesión (in-memory)
-│  ├─ config.rs         # Carga de .env → AppConfig
-│  ├─ duckdb/           # Acceso a datos históricos
-│  │  ├─ db.rs          # Pool/conexión DuckDB
-│  │  ├─ ingest_repo.rs # INSERT datasets, import CSV/Parquet → klines/symbols
-│  │  ├─ market_repo.rs # SELECT symbols y klines
-│  │  └─ mod.rs
-│  ├─ repos/            # Repos en memoria (órdenes, cuentas, sesiones)
-│  │  ├─ memory.rs
-│  │  └─ mod.rs
-│  └─ ws/               # Infra de websockets (broadcast por sesión)
-│     ├─ broadcaster.rs
-│     └─ mod.rs
-├─ services/            # Casos de uso / lógica de dominio
-│  ├─ account_service.rs# Saldos y fills
-│  ├─ ingest_service.rs # Orquesta register/list/ingest datasets
-│  ├─ market_service.rs # Exchange info y klines
-│  ├─ orders_service.rs # Matching simplificado y fills
-│  ├─ replay_service.rs # Emite klines por sesión (WS), coordina Clock
-│  └─ sessions_service.rs # Crear/gestionar sesión (start/pause/resume/seek)
-├─ oas.rs               # Definición OpenAPI (utoipa)
-├─ error.rs             # AppError → HTTP/status
-├─ main.rs              # Entrypoint binario
-└─ lib.rs               # Crate lib (para tests/integración)
-```
+* **Diseño**: hexagonal (dominio independiente), Axum como controlador, servicios orquestan repos/infra.
+* **Reloj simulado** por sesión (pausa/resume/seek) usado por replay/órdenes.
+* **Monotonicidad** de `closeTime` en replay; nunca retrocede el reloj.
+* **Sin fees ni partial fills** hoy; modelo listo para ampliarse.
+* **Cierre WS**: el broadcaster corta solo cuando se elimina la sesión o se decide cerrar explícitamente.
 
 ---
 
-## Versiones clave (Cargo)
+## Extensiones típicas
 
-* `axum = 0.7.x`
-* `tower-http = 0.6.x` (CORS, Trace)
-* `utoipa = 4.x`, `utoipa-swagger-ui = 7.x`
-* `duckdb = 0.9.2` (**bundled**)
-* `uuid = 1.x`, `serde = 1.x`, `tokio = 1.x`
-* `chrono = 0.4.31` (pin para evitar conflicto con Arrow)
-
----
-
-## Esquema de datos (DuckDB)
-
-* `datasets(id, name, path, format, created_at)`
-* `klines(symbol, interval, open_time, open, high, low, close, volume, close_time)`
-  (las columnas deben alinear con tu CSV/Parquet; `ingest_repo` hace `read_csv_auto`/`read_parquet`)
-* `symbols(symbol, base, quote, active)` (poblado al ingerir, deduciendo `base/quote`)
-
-> Si los nombres difieren, revisa `infra/duckdb/ingest_repo.rs`.
-
----
-
-## Roadmap / Ideas
-
-* Persistir órdenes/cuentas/sesiones en DuckDB (migrar `infra::repos::memory` a repos DuckDB).
-* *Partial fills*, fees, tamaños mínimos, *lot sizes* por símbolo.
-* WS públicos: streams por sesión (`kline`, `bookTicker` simulado).
-* Herramientas CLI para ingest y sesiones (además de la API).
+* Persistir **sesiones/órdenes/cuentas** en DuckDB (migrar repos en memoria).
+* Agregar **stats WS** (conexiones activas por sesión) cada N segundos.
+* Validar órdenes contra **lot sizes/tick sizes** por símbolo.
 * Métricas Prometheus y trazas OpenTelemetry.
 
 ---
 
 ## Troubleshooting
 
-* **Swagger no carga** → verifica `oas.rs` y que el server arranca con `PORT`. Abre `/swagger-ui`.
-* **Conflictos chrono/arrow** → ya fijado `chrono = "=0.4.31"`.
-* **No llena órdenes limit** → recuerda la regla: `BUY: limit >= low`, `SELL: limit <= high` del *kline actual*.
-* **Sin datos** → asegúrate de que `path` existe y `format` correcto en `POST /datasets`.
+* **No veo velas en WS**:
+
+  * Revisa que el **rango** de la sesión tenga datos (`/datasets/{symbol}/{interval}/range`).
+  * Confirma que el cliente usa `GET /ws` con `sessionId` y `streams`.
+  * Activa logs: `RUST_LOG=info,tower_http=info,exchange_simulator=debug`
+* **`/api/v1/market/klines` 404**:
+
+  * Asegura que usas esa ruta (existe también `/api/v3/klines`).
+* **Cierre 1011**:
+
+  * Suele ser del cliente (keepalive). El servidor no corta por idle.
 
 ---
 
-¡Listo! Con este README cualquier IA (y humana) entiende el contexto, puede levantar el proyecto, ingerir datos, crear sesiones y empezar a probar bots.
+## Versiones (Cargo típicas)
 
+* `axum = 0.7.x`, `tower-http = 0.6.x`
+* `utoipa = 4.x`
+* `duckdb = 0.9.x` (**bundled**)
+* `tokio = 1.x`, `serde = 1.x`, `uuid = 1.x`
+* `chrono = "=0.4.31"` (para evitar conflictos con Arrow)
 
+---
 
+## Preguntas que puedes hacerle a una IA (y este README responde)
 
+* “¿Qué endpoints tengo para klines y con qué parámetros?”
+* “¿Cómo me conecto al WebSocket y qué mensajes llegarán?”
+* “¿Cómo creo una sesión y empiezo el replay?”
+* “¿Qué persiste en DuckDB y qué queda en memoria?”
+* “¿Cómo pruebo que hay datos en el rango antes de abrir WS?”
 
+---
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-### Probar con `curl`
-
-```bash
-START=1757833200000
-END=$(( START + 60000*10 ))
-
-curl -s "http://localhost:3001/api/v1/market/klines?symbol=ETHBTC&interval=1m&startTime=$START&endTime=$END&limit=1000" | jq length
-
-curl -s "http://localhost:3001/api/v1/market/klines?symbol=ETHBTC&interval=1m&startTime=$START&endTime=$END&limit=1" | jq '.[0]'
-```
-
-Con esto podés chequear tus **klines locales en DuckDB** por REST, igual que hacías con el proxy de Binance.
+Listo. Con esto, cualquier IA (y humana) puede levantar, entender, testear y extender el proyecto de inmediato.

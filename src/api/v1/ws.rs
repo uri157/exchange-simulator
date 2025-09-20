@@ -17,7 +17,6 @@ use tokio::{
     time::{interval, MissedTickBehavior},
 };
 use tracing::{debug, error, info, instrument, warn};
-use tungstenite::protocol::frame::coding::CloseCode;
 
 use crate::{app::bootstrap::AppState, dto::ws::WsQuery, error::AppError};
 
@@ -76,7 +75,7 @@ async fn handle_socket(state: AppState, query: WsQuery, mut socket: WebSocket) {
             let _ = socket.send(Message::Text(payload)).await;
             let _ = socket
                 .send(Message::Close(Some(CloseFrame {
-                    code: CloseCode::Error,
+                    code: 1011,
                     reason: Cow::from("subscription failed"),
                 })))
                 .await;
@@ -88,7 +87,6 @@ async fn handle_socket(state: AppState, query: WsQuery, mut socket: WebSocket) {
 
     let mut ping_interval = interval(Duration::from_secs(30));
     ping_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    // Discard the immediate first tick so we wait a full interval before sending the first ping.
     let _ = ping_interval.tick().await;
 
     let mut stats_interval = interval(Duration::from_secs(12));
@@ -136,7 +134,7 @@ async fn handle_socket(state: AppState, query: WsQuery, mut socket: WebSocket) {
                         warn!(session_id = %session_id, skipped, "broadcast lagged, closing websocket");
                         let _ = socket
                             .send(Message::Close(Some(CloseFrame {
-                                code: CloseCode::Normal,
+                                code: 1000,
                                 reason: Cow::from("session closed"),
                             })))
                             .await;
@@ -152,7 +150,7 @@ async fn handle_socket(state: AppState, query: WsQuery, mut socket: WebSocket) {
                         };
                         let _ = socket
                             .send(Message::Close(Some(CloseFrame {
-                                code: CloseCode::Normal,
+                                code: 1000,
                                 reason,
                             })))
                             .await;

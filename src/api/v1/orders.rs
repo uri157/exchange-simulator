@@ -1,6 +1,6 @@
 use axum::{
     extract::Query,
-    routing::{delete, get, post},
+    routing::{get, post},
     Extension, Json, Router,
 };
 use tracing::instrument;
