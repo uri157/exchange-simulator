@@ -304,8 +304,11 @@ impl ReplayEngine for ReplayService {
 
     async fn stop(&self, session_id: Uuid) -> Result<(), AppError> {
         self.cancel_task(session_id).await;
-        self.clock.pause(session_id).await?;
-        Ok(())
+        match self.clock.pause(session_id).await {
+            Ok(_) => Ok(()),
+            Err(AppError::NotFound(_)) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 }
 

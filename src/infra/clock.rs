@@ -34,27 +34,10 @@ impl SimulatedClock {
         }
     }
 
-    pub async fn init_session(
-        &self,
-        session_id: Uuid,
-        start_time: TimestampMs,
-    ) -> Result<(), AppError> {
+    /// Remove any state for a session if it exists (idempotente).
+    pub async fn stop_if_exists(&self, session_id: Uuid) {
         let mut guard = self.inner.write().await;
-        match guard.entry(session_id) {
-            Entry::Occupied(mut entry) => {
-                let state = entry.get_mut();
-                state.current_time = start_time;
-                state.paused = true;
-            }
-            Entry::Vacant(entry) => {
-                entry.insert(ClockState {
-                    current_time: start_time,
-                    speed: self.default_speed,
-                    paused: true,
-                });
-            }
-        }
-        Ok(())
+        guard.remove(&session_id);
     }
 }
 
@@ -148,19 +131,19 @@ impl crate::domain::traits::Clock for SimulatedClock {
 
     async fn pause(&self, session_id: Uuid) -> Result<(), AppError> {
         let mut guard = self.inner.write().await;
-        let state = guard.get_mut(&session_id).ok_or_else(|| {
-            AppError::NotFound(format!("clock for session {session_id} not found"))
-        })?;
-        state.paused = true;
+        if let Some(state) = guard.get_mut(&session_id) {
+            state.paused = true;
+        }
+        // Idempotente: si no existe, no falla
         Ok(())
     }
 
     async fn resume(&self, session_id: Uuid) -> Result<(), AppError> {
         let mut guard = self.inner.write().await;
-        let state = guard.get_mut(&session_id).ok_or_else(|| {
-            AppError::NotFound(format!("clock for session {session_id} not found"))
-        })?;
-        state.paused = false;
+        if let Some(state) = guard.get_mut(&session_id) {
+            state.paused = false;
+        }
+        // Idempotente: si no existe, no falla
         Ok(())
     }
 

@@ -195,7 +195,12 @@ impl SessionsService {
     pub async fn disable_session(&self, session_id: Uuid) -> ServiceResult<SessionConfig> {
         let session = self.sessions_repo.get(session_id).await?;
 
-        self.replay.stop(session_id).await?;
+        // Stop replay if present (idempotent: ignore NotFound)
+        match self.replay.stop(session_id).await {
+            Ok(_) => {}
+            Err(AppError::NotFound(_)) => {}
+            Err(e) => return Err(e),
+        }
 
         if matches!(session.status, SessionStatus::Running) {
             let _ = self
@@ -214,7 +219,12 @@ impl SessionsService {
         // Ensure it exists (and fetch current status for potential cleanup)
         let session = self.sessions_repo.get(session_id).await?;
 
-        self.replay.stop(session_id).await?;
+        // Stop replay if present (idempotent: ignore NotFound)
+        match self.replay.stop(session_id).await {
+            Ok(_) => {}
+            Err(AppError::NotFound(_)) => {}
+            Err(e) => return Err(e),
+        }
 
         if matches!(session.status, SessionStatus::Running) {
             let _ = self
