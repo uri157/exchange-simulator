@@ -7,13 +7,14 @@ use crate::dto;
     paths(
         // Market
         crate::api::v1::market::exchange_info,
-        crate::api::v1::market::klines,
+        crate::api::v1::market::local_klines, // GET /api/v1/market/klines (DuckDB)
+        crate::api::v1::market::klines,       // GET /api/v3/klines (compat Binance)
         // Datasets (ingesta y consultas locales)
         crate::api::v1::datasets::register_dataset,
         crate::api::v1::datasets::list_datasets,
         crate::api::v1::datasets::ingest_dataset,
-        crate::api::v1::datasets::get_ready_symbols,       // GET /api/v1/datasets/symbols
-        crate::api::v1::datasets::get_ready_intervals,     // GET /api/v1/datasets/:symbol/intervals
+        crate::api::v1::datasets::get_ready_symbols,         // GET /api/v1/datasets/symbols
+        crate::api::v1::datasets::get_ready_intervals,       // GET /api/v1/datasets/:symbol/intervals
         crate::api::v1::datasets::get_symbol_interval_range, // GET /api/v1/datasets/:symbol/:interval/range
         // Sessions
         crate::api::v1::sessions::create_session,
@@ -77,7 +78,7 @@ use crate::dto;
         )
     ),
     tags(
-        (name = "market", description = "Market data endpoints"),
+        (name = "market", description = "Market data endpoints (local DuckDB y compat Binance)"),
         (name = "datasets", description = "Dataset ingestion & local dataset queries"),
         (name = "sessions", description = "Replay sessions"),
         (name = "orders", description = "Orders"),

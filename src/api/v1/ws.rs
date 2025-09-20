@@ -7,6 +7,7 @@ use axum::{
     routing::get,
     Extension, Router,
 };
+use serde_json::json;
 use tracing::{error, instrument};
 
 use crate::{app::bootstrap::AppState, dto::ws::WsQuery};
@@ -24,9 +25,11 @@ pub async fn ws_handler(
     ws.on_upgrade(move |socket| handle_socket(state, query, socket))
 }
 
+#[instrument(skip(state, socket))]
 async fn handle_socket(state: AppState, query: WsQuery, mut socket: WebSocket) {
     match state.broadcaster.subscribe(query.session_id).await {
         Ok(mut rx) => {
+            // Relay broadcasted JSON strings to this client.
             while let Ok(message) = rx.recv().await {
                 if socket.send(Message::Text(message)).await.is_err() {
                     break;
@@ -35,7 +38,13 @@ async fn handle_socket(state: AppState, query: WsQuery, mut socket: WebSocket) {
         }
         Err(err) => {
             error!(%err, "failed to subscribe websocket");
-            let _ = socket.send(Message::Text(format!("error: {}", err))).await;
+            // Always send JSON-shaped error payloads
+            let payload = json!({
+                "event": "error",
+                "data": { "message": err.to_string() }
+            })
+            .to_string();
+            let _ = socket.send(Message::Text(payload)).await;
         }
     }
 }

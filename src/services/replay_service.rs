@@ -236,9 +236,8 @@ impl ReplayService {
 
 fn serialize_kline(symbol: &str, interval: &Interval, kline: &Kline) -> String {
     let payload = json!({
-        "stream": format!("kline@{}:{}", interval.as_str(), symbol),
+        "event": "kline",
         "data": {
-            "event": "kline",
             "symbol": symbol,
             "interval": interval.as_str(),
             "openTime": kline.open_time.0,
@@ -247,8 +246,9 @@ fn serialize_kline(symbol: &str, interval: &Interval, kline: &Kline) -> String {
             "high": kline.high.0,
             "low": kline.low.0,
             "close": kline.close.0,
-            "volume": kline.volume.0,
-        }
+            "volume": kline.volume.0
+        },
+        "stream": format!("kline@{}:{}", interval.as_str(), symbol)
     });
     payload.to_string()
 }

@@ -312,3 +312,54 @@ src/
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### Probar con `curl`
+
+```bash
+START=1757833200000
+END=$(( START + 60000*10 ))
+
+curl -s "http://localhost:3001/api/v1/market/klines?symbol=ETHBTC&interval=1m&startTime=$START&endTime=$END&limit=1000" | jq length
+
+curl -s "http://localhost:3001/api/v1/market/klines?symbol=ETHBTC&interval=1m&startTime=$START&endTime=$END&limit=1" | jq '.[0]'
+```
+
+Con esto podés chequear tus **klines locales en DuckDB** por REST, igual que hacías con el proxy de Binance.

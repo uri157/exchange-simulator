@@ -1,5 +1,6 @@
-use axum::{Extension, Json, Router, routing::get};
 use std::str::FromStr;
+
+use axum::{extract::Query, routing::get, Extension, Json, Router};
 use tracing::instrument;
 
 use crate::{
@@ -12,6 +13,9 @@ use crate::{
 pub fn router() -> Router {
     Router::new()
         .route("/api/v1/exchangeInfo", get(exchange_info))
+        // Local DuckDB klines (simulador)
+        .route("/api/v1/market/klines", get(local_klines))
+        // Compat con estilo Binance
         .route("/api/v3/klines", get(klines))
 }
 
@@ -33,6 +37,36 @@ pub async fn exchange_info(
 
 #[utoipa::path(
     get,
+    path = "/api/v1/market/klines",
+    params(
+        ("symbol" = String, Query, description = "Símbolo, ej: ETHBTC"),
+        ("interval" = String, Query, description = "Intervalo, ej: 1m"),
+        ("startTime" = i64, Query, description = "Inicio en epoch ms (opcional)"),
+        ("endTime" = i64, Query, description = "Fin en epoch ms (opcional)"),
+        ("limit" = usize, Query, description = "Máx. filas (default 1000)")
+    ),
+    responses((status = 200, body = Vec<KlineResponse>))
+)]
+#[instrument(skip(state, params))]
+pub async fn local_klines(
+    Extension(state): Extension<AppState>,
+    Query(params): Query<KlinesParams>,
+) -> ApiResult<Json<Vec<KlineResponse>>> {
+    let interval = Interval::from_str(&params.interval)?;
+    let start = params.start_time.map(TimestampMs::from);
+    let end = params.end_time.map(TimestampMs::from);
+    let limit = params.limit;
+
+    let klines = state
+        .market_service
+        .klines(&params.symbol, interval, start, end, limit)
+        .await?;
+
+    Ok(Json(klines.into_iter().map(KlineResponse::from).collect()))
+}
+
+#[utoipa::path(
+    get,
     path = "/api/v3/klines",
     params(
         ("symbol" = String, Query, description = "Trading pair"),
@@ -46,15 +80,17 @@ pub async fn exchange_info(
 #[instrument(skip(state, params))]
 pub async fn klines(
     Extension(state): Extension<AppState>,
-    params: axum::extract::Query<KlinesParams>,
+    Query(params): Query<KlinesParams>,
 ) -> ApiResult<Json<Vec<KlineResponse>>> {
-    let params = params.0;
     let interval = Interval::from_str(&params.interval)?;
     let start = params.start_time.map(TimestampMs::from);
     let end = params.end_time.map(TimestampMs::from);
+    let limit = params.limit;
+
     let klines = state
         .market_service
-        .klines(&params.symbol, interval, start, end, params.limit)
+        .klines(&params.symbol, interval, start, end, limit)
         .await?;
+
     Ok(Json(klines.into_iter().map(KlineResponse::from).collect()))
 }

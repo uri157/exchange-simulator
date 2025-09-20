@@ -25,10 +25,9 @@ impl SessionBroadcaster {
         session_id: Uuid,
     ) -> Result<broadcast::Receiver<String>, AppError> {
         let mut guard = self.inner.write().await;
-        let sender = guard.entry(session_id).or_insert_with(|| {
-            let (tx, _rx) = broadcast::channel(self.buffer);
-            tx
-        });
+        let sender = guard
+            .entry(session_id)
+            .or_insert_with(|| broadcast::channel(self.buffer).0);
         Ok(sender.subscribe())
     }
 
@@ -44,5 +43,11 @@ impl SessionBroadcaster {
         let sender = self.get_sender(session_id).await;
         let _ = sender.send(message);
         Ok(())
+    }
+
+    /// Cierra el canal de una sesión (drop del sender) para que los clientes reciban `Closed`.
+    pub async fn close(&self, session_id: Uuid) {
+        let mut guard = self.inner.write().await;
+        guard.remove(&session_id);
     }
 }

@@ -20,4 +20,3 @@ pub fn create_router() -> Router {
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
 }
-
