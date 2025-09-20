@@ -45,6 +45,14 @@ impl SessionBroadcaster {
         Ok(())
     }
 
+    pub async fn subscriber_count(&self, session_id: Uuid) -> usize {
+        let guard = self.inner.read().await;
+        guard
+            .get(&session_id)
+            .map(|sender| sender.receiver_count())
+            .unwrap_or(0)
+    }
+
     /// Cierra el canal de una sesión (drop del sender) para que los clientes reciban `Closed`.
     pub async fn close(&self, session_id: Uuid) {
         let mut guard = self.inner.write().await;
