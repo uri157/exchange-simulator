@@ -75,6 +75,24 @@ impl SessionsRepo for MemorySessionsRepo {
         let guard = self.inner.read().await;
         Ok(guard.values().cloned().collect())
     }
+
+    async fn set_enabled(&self, session_id: Uuid, enabled: bool) -> Result<(), AppError> {
+        let mut guard = self.inner.write().await;
+        let entry = guard
+            .get_mut(&session_id)
+            .ok_or_else(|| AppError::NotFound(format!("session {session_id} not found")))?;
+        entry.enabled = enabled;
+        entry.updated_at = TimestampMs::from(Utc::now().timestamp_millis());
+        Ok(())
+    }
+
+    async fn delete(&self, session_id: Uuid) -> Result<(), AppError> {
+        let mut guard = self.inner.write().await;
+        guard
+            .remove(&session_id)
+            .map(|_| ())
+            .ok_or_else(|| AppError::NotFound(format!("session {session_id} not found")))
+    }
 }
 
 #[derive(Default)]
@@ -107,11 +125,7 @@ impl OrdersRepo for MemoryOrdersRepo {
             .ok_or_else(|| AppError::NotFound(format!("order {order_id} not found")))
     }
 
-    async fn get_by_client_id(
-        &self,
-        session_id: Uuid,
-        client_id: &str,
-    ) -> Result<Order, AppError> {
+    async fn get_by_client_id(&self, session_id: Uuid, client_id: &str) -> Result<Order, AppError> {
         let guard = self.inner.read().await;
         let session_orders = guard
             .get(&session_id)
@@ -136,7 +150,12 @@ impl OrdersRepo for MemoryOrdersRepo {
             .ok_or_else(|| AppError::NotFound(format!("session {session_id} not found")))?;
         let mut out: Vec<Order> = session_orders
             .values()
-            .filter(|order| matches!(order.status, OrderStatus::New | OrderStatus::PartiallyFilled))
+            .filter(|order| {
+                matches!(
+                    order.status,
+                    OrderStatus::New | OrderStatus::PartiallyFilled
+                )
+            })
             .cloned()
             .collect();
         if let Some(symbol) = symbol {

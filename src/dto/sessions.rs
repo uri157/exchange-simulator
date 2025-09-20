@@ -15,6 +15,12 @@ pub struct CreateSessionRequest {
     pub seed: Option<u64>,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSessionEnabledRequest {
+    pub enabled: Option<bool>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionResponse {
@@ -24,6 +30,7 @@ pub struct SessionResponse {
     pub start_time: i64,
     pub end_time: i64,
     pub speed: f64,
+    pub enabled: bool,
     pub status: SessionStatus,
     pub seed: u64,
     pub created_at: i64,
@@ -38,6 +45,7 @@ impl From<SessionConfig> for SessionResponse {
             start_time: value.start_time.0,
             end_time: value.end_time.0,
             speed: value.speed.0,
+            enabled: value.enabled,
             status: value.status,
             seed: value.seed,
             created_at: value.created_at.0,

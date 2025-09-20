@@ -38,7 +38,8 @@ impl DuckDbSessionsRepo {
                 status TEXT,
                 seed BIGINT,
                 created_at BIGINT,
-                updated_at BIGINT
+                updated_at BIGINT,
+                enabled BOOLEAN DEFAULT TRUE
             );
         ";
 
@@ -46,6 +47,17 @@ impl DuckDbSessionsRepo {
             conn.execute(SQL, []).map_err(|err| {
                 AppError::Database(format!("create sessions table failed: {err}"))
             })?;
+            if let Err(err) = conn.execute(
+                "ALTER TABLE sessions ADD COLUMN enabled BOOLEAN DEFAULT TRUE",
+                [],
+            ) {
+                let msg = err.to_string();
+                if !msg.contains("Duplicate column") && !msg.contains("already exists") {
+                    return Err(AppError::Database(format!(
+                        "alter sessions add enabled failed: {err}"
+                    )));
+                }
+            }
             Ok(())
         })?;
 
@@ -115,6 +127,10 @@ impl DuckDbSessionsRepo {
         let updated_at: i64 = row
             .get(9)
             .map_err(|err| AppError::Database(format!("session column error: {err}")))?;
+        let enabled: Option<bool> = row
+            .get(10)
+            .map_err(|err| AppError::Database(format!("session column error: {err}")))?;
+        let enabled = enabled.unwrap_or(true);
 
         Ok(SessionConfig {
             session_id,
@@ -123,6 +139,7 @@ impl DuckDbSessionsRepo {
             start_time: TimestampMs(start_time),
             end_time: TimestampMs(end_time),
             speed: Speed(speed_val),
+            enabled,
             status,
             seed,
             created_at: TimestampMs(created_at),
@@ -136,7 +153,7 @@ impl DuckDbSessionsRepo {
         pool.with_conn_async(move |conn| {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, symbols, interval, start_time, end_time, speed, status, seed, created_at, updated_at \
+                    "SELECT id, symbols, interval, start_time, end_time, speed, status, seed, created_at, updated_at, enabled \
                      FROM sessions WHERE id = ?1",
                 )
                 .map_err(|err| AppError::Database(format!("prepare session get failed: {err}")))?;
@@ -164,8 +181,8 @@ impl SessionsRepo for DuckDbSessionsRepo {
             let seed_val = i64::try_from(to_insert.seed)
                 .map_err(|err| AppError::Database(format!("invalid session seed: {err}")))?;
             conn.execute(
-                "INSERT INTO sessions (id, symbols, interval, start_time, end_time, speed, status, seed, created_at, updated_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                "INSERT INTO sessions (id, symbols, interval, start_time, end_time, speed, status, seed, created_at, updated_at, enabled) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     to_insert.session_id.to_string(),
                     symbols,
@@ -176,7 +193,8 @@ impl SessionsRepo for DuckDbSessionsRepo {
                     Self::status_to_str(&to_insert.status),
                     seed_val,
                     to_insert.created_at.0,
-                    to_insert.updated_at.0
+                    to_insert.updated_at.0,
+                    to_insert.enabled,
                 ],
             )
             .map_err(|err| AppError::Database(format!("insert session failed: {err}")))?;
@@ -248,7 +266,7 @@ impl SessionsRepo for DuckDbSessionsRepo {
         pool.with_conn_async(|conn| {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, symbols, interval, start_time, end_time, speed, status, seed, created_at, updated_at \
+                    "SELECT id, symbols, interval, start_time, end_time, speed, status, seed, created_at, updated_at, enabled \
                      FROM sessions ORDER BY created_at DESC",
                 )
                 .map_err(|err| AppError::Database(format!("prepare session list failed: {err}")))?;
@@ -263,6 +281,45 @@ impl SessionsRepo for DuckDbSessionsRepo {
                 out.push(Self::row_to_session(&row)?);
             }
             Ok(out)
+        })
+        .await
+    }
+
+    async fn set_enabled(&self, session_id: Uuid, enabled: bool) -> Result<(), AppError> {
+        let pool = self.pool.clone();
+        let now = TimestampMs::from(Utc::now().timestamp_millis());
+        let id = session_id;
+        pool.with_conn_async(move |conn| {
+            let updated = conn
+                .execute(
+                    "UPDATE sessions SET enabled = ?1, updated_at = ?2 WHERE id = ?3",
+                    params![enabled, now.0, id.to_string()],
+                )
+                .map_err(|err| {
+                    AppError::Database(format!("update session enabled failed: {err}"))
+                })?;
+            if updated == 0 {
+                return Err(AppError::NotFound(format!("session {id} not found")));
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    async fn delete(&self, session_id: Uuid) -> Result<(), AppError> {
+        let pool = self.pool.clone();
+        let id = session_id;
+        pool.with_conn_async(move |conn| {
+            let deleted = conn
+                .execute(
+                    "DELETE FROM sessions WHERE id = ?1",
+                    params![id.to_string()],
+                )
+                .map_err(|err| AppError::Database(format!("delete session failed: {err}")))?;
+            if deleted == 0 {
+                return Err(AppError::NotFound(format!("session {id} not found")));
+            }
+            Ok(())
         })
         .await
     }

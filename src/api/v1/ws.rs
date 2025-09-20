@@ -16,10 +16,10 @@ use tokio::{
     sync::broadcast::error::RecvError,
     time::{interval, MissedTickBehavior},
 };
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 use tungstenite::protocol::frame::coding::CloseCode;
 
-use crate::{app::bootstrap::AppState, dto::ws::WsQuery};
+use crate::{app::bootstrap::AppState, dto::ws::WsQuery, error::AppError};
 
 pub fn router() -> Router {
     Router::new().route("/ws", get(ws_handler))
@@ -34,16 +34,27 @@ pub async fn ws_handler(
     Query(query): Query<WsQuery>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    if let Err(err) = state.sessions_service.get_session(query.session_id).await {
-        warn!(error = %err, session_id = %query.session_id, "ws session validation failed");
-        let body = Json(json!({
-            "event": "error",
-            "data": {"message": "session not available"}
-        }));
-        return (StatusCode::FORBIDDEN, body).into_response();
+    match state.sessions_service.get_session(query.session_id).await {
+        Ok(session) => {
+            if !session.enabled {
+                info!(session_id = %query.session_id, "ws session disabled");
+                let body = Json(json!({
+                    "event": "error",
+                    "data": {"message": "session disabled"}
+                }));
+                return (StatusCode::FORBIDDEN, body).into_response();
+            }
+            ws.on_upgrade(move |socket| handle_socket(state, query, socket))
+        }
+        Err(err) => {
+            warn!(error = %err, session_id = %query.session_id, "ws session validation failed");
+            let body = Json(json!({
+                "event": "error",
+                "data": {"message": "session not available"}
+            }));
+            (StatusCode::FORBIDDEN, body).into_response()
+        }
     }
-
-    ws.on_upgrade(move |socket| handle_socket(state, query, socket))
 }
 
 #[instrument(
@@ -133,10 +144,16 @@ async fn handle_socket(state: AppState, query: WsQuery, mut socket: WebSocket) {
                     }
                     Err(RecvError::Closed) => {
                         debug!(session_id = %session_id, "broadcast channel closed, terminating websocket");
+                        let reason = match state.sessions_service.get_session(session_id).await {
+                            Ok(session) if !session.enabled => Cow::from("session disabled"),
+                            Ok(_) => Cow::from("session closed"),
+                            Err(AppError::NotFound(_)) => Cow::from("session deleted"),
+                            Err(_) => Cow::from("session closed"),
+                        };
                         let _ = socket
                             .send(Message::Close(Some(CloseFrame {
                                 code: CloseCode::Normal,
-                                reason: Cow::from("session closed"),
+                                reason,
                             })))
                             .await;
                         break 'outer;

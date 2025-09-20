@@ -111,6 +111,7 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
         sessions_repo.clone(),
         clock_trait.clone(),
         replay_engine,
+        broadcaster.clone(),
     ));
 
     let state = AppState {

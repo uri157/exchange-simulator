@@ -53,6 +53,8 @@ pub trait SessionsRepo: Send + Sync {
         -> Result<SessionConfig, AppError>;
     async fn get(&self, session_id: Uuid) -> Result<SessionConfig, AppError>;
     async fn list(&self) -> Result<Vec<SessionConfig>, AppError>;
+    async fn set_enabled(&self, session_id: Uuid, enabled: bool) -> Result<(), AppError>;
+    async fn delete(&self, session_id: Uuid) -> Result<(), AppError>;
 }
 
 #[async_trait]
@@ -92,6 +94,7 @@ pub trait ReplayEngine: Send + Sync {
     async fn pause(&self, session_id: Uuid) -> Result<(), AppError>;
     async fn resume(&self, session_id: Uuid) -> Result<(), AppError>;
     async fn seek(&self, session_id: Uuid, to: TimestampMs) -> Result<(), AppError>;
+    async fn stop(&self, session_id: Uuid) -> Result<(), AppError>;
 }
 
 #[async_trait]

@@ -58,7 +58,6 @@ impl ReplayService {
     }
 
     async fn finalize_run(&self, session_id: Uuid) {
-        self.broadcaster.close(session_id).await;
         let _ = self.tasks.write().await.remove(&session_id);
     }
 
@@ -272,7 +271,6 @@ impl ReplayEngine for ReplayService {
             let mut guard = self.latest.write().await;
             guard.retain(|(id, _), _| *id != session.session_id);
         }
-        self.broadcaster.close(session.session_id).await;
 
         let service = Arc::new(self.clone_inner());
         let handle = tokio::spawn(
@@ -301,6 +299,12 @@ impl ReplayEngine for ReplayService {
         let handle = tokio::spawn(service.clone().run_session(session.clone(), to));
 
         self.tasks.write().await.insert(session_id, handle);
+        Ok(())
+    }
+
+    async fn stop(&self, session_id: Uuid) -> Result<(), AppError> {
+        self.cancel_task(session_id).await;
+        self.clock.pause(session_id).await?;
         Ok(())
     }
 }
