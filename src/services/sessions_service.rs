@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        models::{SessionConfig, SessionStatus},
+        models::{MarketMode, SessionConfig, SessionStatus},
         traits::{Clock, ReplayEngine, SessionsRepo},
         value_objects::{Interval, Speed, TimestampMs},
     },
@@ -20,6 +20,7 @@ pub struct SessionsService {
     clock: Arc<dyn Clock>,
     replay: Arc<dyn ReplayEngine>,
     broadcaster: SessionBroadcaster,
+    default_market_mode: MarketMode,
 }
 
 impl SessionsService {
@@ -28,12 +29,14 @@ impl SessionsService {
         clock: Arc<dyn Clock>,
         replay: Arc<dyn ReplayEngine>,
         broadcaster: SessionBroadcaster,
+        default_market_mode: MarketMode,
     ) -> Self {
         Self {
             sessions_repo,
             clock,
             replay,
             broadcaster,
+            default_market_mode,
         }
     }
 
@@ -45,6 +48,7 @@ impl SessionsService {
         end_time: TimestampMs,
         speed: Speed,
         seed: u64,
+        market_mode: Option<MarketMode>,
     ) -> ServiceResult<SessionConfig> {
         speed.validate()?;
 
@@ -69,6 +73,7 @@ impl SessionsService {
             start_time,
             end_time,
             speed,
+            market_mode: market_mode.unwrap_or(self.default_market_mode),
             enabled: true,
             status: SessionStatus::Created,
             seed,

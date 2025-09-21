@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 pub mod dataset_status;
 
-use crate::domain::value_objects::{Interval, Price, Quantity, Speed, TimestampMs};
+use crate::domain::value_objects::{Decimal, Interval, Price, Quantity, Speed, TimestampMs};
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Symbol {
@@ -33,6 +33,47 @@ pub struct Trade {
     pub price: Price,
     pub quantity: Quantity,
     pub timestamp: TimestampMs,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MarketMode {
+    Kline,
+    AggTrades,
+}
+
+impl std::fmt::Display for MarketMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MarketMode::Kline => write!(f, "kline"),
+            MarketMode::AggTrades => write!(f, "aggtrades"),
+        }
+    }
+}
+
+impl std::str::FromStr for MarketMode {
+    type Err = crate::error::AppError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "kline" => Ok(MarketMode::Kline),
+            "aggtrades" => Ok(MarketMode::AggTrades),
+            other => Err(crate::error::AppError::Validation(format!(
+                "invalid market mode: {other}"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct AggTrade {
+    pub symbol: String,
+    pub event_time: TimestampMs,
+    pub trade_id: i64,
+    pub price: Decimal,
+    pub qty: Decimal,
+    pub quote_qty: Decimal,
+    pub is_buyer_maker: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
@@ -112,6 +153,7 @@ pub struct SessionConfig {
     pub start_time: TimestampMs,
     pub end_time: TimestampMs,
     pub speed: Speed,
+    pub market_mode: MarketMode,
     pub enabled: bool,
     pub status: SessionStatus,
     pub seed: u64,

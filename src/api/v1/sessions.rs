@@ -41,20 +41,28 @@ pub async fn create_session(
     Extension(state): Extension<AppState>,
     Json(payload): Json<CreateSessionRequest>,
 ) -> ApiResult<Json<SessionResponse>> {
-    let interval = Interval::from_str(&payload.interval)?;
-    let speed = payload
-        .speed
-        .map(Speed::from)
-        .unwrap_or(state.config.default_speed);
+    let CreateSessionRequest {
+        symbols,
+        interval,
+        start_time,
+        end_time,
+        speed,
+        seed,
+        market_mode,
+    } = payload;
+
+    let interval = Interval::from_str(&interval)?;
+    let speed = speed.map(Speed::from).unwrap_or(state.config.default_speed);
     let session = state
         .sessions_service
         .create_session(
-            payload.symbols,
+            symbols,
             interval,
-            TimestampMs::from(payload.start_time),
-            TimestampMs::from(payload.end_time),
+            TimestampMs::from(start_time),
+            TimestampMs::from(end_time),
             speed,
-            payload.seed.unwrap_or(0),
+            seed.unwrap_or(0),
+            market_mode,
         )
         .await?;
     Ok(Json(session.into()))
