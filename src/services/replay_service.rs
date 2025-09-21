@@ -292,13 +292,27 @@ impl ReplayEngine for ReplayService {
     }
 
     async fn seek(&self, session_id: Uuid, to: TimestampMs) -> Result<(), AppError> {
+        // Obtener el estado actual para decidir si relanzamos o no
+        let session = self.sessions_repo.get(session_id).await?;
+
+        // Siempre cancelamos cualquier runner activo para evitar duplicados
         self.cancel_task(session_id).await;
 
-        let session = self.sessions_repo.get(session_id).await?;
-        let service = Arc::new(self.clone_inner());
-        let handle = tokio::spawn(service.clone().run_session(session.clone(), to));
+        match session.status {
+            // Si está corriendo, relanzamos desde `to`
+            SessionStatus::Running => {
+                let service = Arc::new(self.clone_inner());
+                let handle = tokio::spawn(service.clone().run_session(session.clone(), to));
+                self.tasks.write().await.insert(session_id, handle);
+            }
+            // Si no está corriendo, el seek solo reposiciona el reloj (ya lo hace SessionsService)
+            // Limpiamos caché de últimas velas y no lanzamos runner.
+            SessionStatus::Created | SessionStatus::Paused | SessionStatus::Ended => {
+                let mut guard = self.latest.write().await;
+                guard.retain(|(id, _), _| *id != session_id);
+            }
+        }
 
-        self.tasks.write().await.insert(session_id, handle);
         Ok(())
     }
 

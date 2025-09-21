@@ -131,14 +131,14 @@ async fn handle_socket(state: AppState, query: WsQuery, mut socket: WebSocket) {
                         }
                     }
                     Err(RecvError::Lagged(skipped)) => {
-                        warn!(session_id = %session_id, skipped, "broadcast lagged, closing websocket");
-                        let _ = socket
-                            .send(Message::Close(Some(CloseFrame {
-                                code: 1000,
-                                reason: Cow::from("session closed"),
-                            })))
-                            .await;
-                        break 'outer;
+                        // No cerramos: informamos y seguimos desde el último mensaje disponible.
+                        warn!(session_id = %session_id, skipped = skipped, "broadcast lagged; dropping to latest and continuing");
+                        let payload = json!({
+                            "event": "warning",
+                            "data": { "type": "lagged", "skipped": skipped }
+                        }).to_string();
+                        let _ = socket.send(Message::Text(payload)).await;
+                        continue;
                     }
                     Err(RecvError::Closed) => {
                         debug!(session_id = %session_id, "broadcast channel closed, terminating websocket");

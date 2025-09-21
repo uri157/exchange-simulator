@@ -14,9 +14,11 @@ pub struct SessionBroadcaster {
 
 impl SessionBroadcaster {
     pub fn new(buffer: usize) -> Self {
+        // Aseguramos un tamaño mínimo de 1 para evitar panics de broadcast::channel(0)
+        let size = buffer.max(1);
         Self {
             inner: Arc::new(RwLock::new(HashMap::new())),
-            buffer,
+            buffer: size,
         }
     }
 
