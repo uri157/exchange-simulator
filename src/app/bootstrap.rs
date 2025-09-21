@@ -11,11 +11,16 @@ use uuid::Uuid;
 
 use crate::{
     app::router::create_router,
-    domain::traits::{AccountsRepo, MarketIngestor, MarketStore, OrdersRepo, SessionsRepo},
+    domain::traits::{
+        AccountsRepo, AggTradesStore, MarketIngestor, MarketStore, OrdersRepo, SessionsRepo,
+    },
     infra::{
         clock::SimulatedClock,
         config::AppConfig,
-        duckdb::{db::DuckDbPool, ingest_repo::DuckDbIngestRepo, market_repo::DuckDbMarketStore},
+        duckdb::{
+            agg_trades_repo::DuckDbAggTradesStore, db::DuckDbPool, ingest_repo::DuckDbIngestRepo,
+            market_repo::DuckDbMarketStore,
+        },
         repos::{
             duckdb::DuckDbSessionsRepo,
             memory::{MemoryAccountsRepo, MemoryOrdersRepo},
@@ -34,6 +39,7 @@ pub struct AppState {
     pub config: AppConfig,
     pub market_service: Arc<MarketService>,
     pub ingest_service: Arc<IngestService>,
+    pub agg_trades_store: Arc<dyn AggTradesStore>,
     pub sessions_service: Arc<SessionsService>,
     pub orders_service: Arc<OrdersService>,
     pub account_service: Arc<AccountService>,
@@ -77,11 +83,18 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
     }
 
     // Servicios
-    let market_store: Arc<dyn MarketStore> = Arc::new(DuckDbMarketStore::new(pool.clone()));
+    let market_store_impl = Arc::new(DuckDbMarketStore::new(pool.clone()));
+    let market_store: Arc<dyn MarketStore> = market_store_impl.clone();
+    let agg_trades_store_impl = Arc::new(DuckDbAggTradesStore::new(pool.clone()));
+    let agg_trades_store: Arc<dyn AggTradesStore> = agg_trades_store_impl.clone();
     let market_service = Arc::new(MarketService::new(market_store.clone()));
 
     let ingestor: Arc<dyn MarketIngestor> = Arc::new(DuckDbIngestRepo::new(pool.clone()));
-    let ingest_service = Arc::new(IngestService::new(ingestor.clone()));
+    let ingest_service = Arc::new(IngestService::new(
+        ingestor.clone(),
+        market_store_impl.clone(),
+        agg_trades_store_impl.clone(),
+    ));
 
     let sessions_repo: Arc<dyn SessionsRepo> = Arc::new(DuckDbSessionsRepo::new(pool.clone())?);
     let orders_repo: Arc<dyn OrdersRepo> = Arc::new(MemoryOrdersRepo::new());
@@ -125,6 +138,7 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
         config: config.clone(),
         market_service,
         ingest_service,
+        agg_trades_store,
         sessions_service,
         orders_service,
         account_service,

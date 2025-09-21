@@ -4,8 +4,8 @@ use uuid::Uuid;
 use crate::{
     domain::{
         models::{
-            AccountSnapshot, DatasetMetadata, Fill, Kline, Order, SessionConfig, SessionStatus,
-            Symbol,
+            AccountSnapshot, AggTrade, DatasetMetadata, Fill, Kline, Order, SessionConfig,
+            SessionStatus, Symbol,
         },
         value_objects::{Interval, Speed, TimestampMs},
     },
@@ -23,6 +23,17 @@ pub trait MarketStore: Send + Sync {
         end: Option<TimestampMs>,
         limit: Option<usize>,
     ) -> Result<Vec<Kline>, AppError>;
+}
+
+#[async_trait]
+pub trait AggTradesStore: Send + Sync {
+    async fn get_trades(
+        &self,
+        symbol: &str,
+        from: Option<TimestampMs>,
+        to: Option<TimestampMs>,
+        limit: Option<usize>,
+    ) -> Result<Vec<AggTrade>, AppError>;
 }
 
 #[async_trait]
