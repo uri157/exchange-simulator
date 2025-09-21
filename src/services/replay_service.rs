@@ -298,20 +298,20 @@ impl ReplayEngine for ReplayService {
         // Siempre cancelamos cualquier runner activo para evitar duplicados
         self.cancel_task(session_id).await;
 
-        match session.status {
-            // Si está corriendo, relanzamos desde `to`
-            SessionStatus::Running => {
-                let service = Arc::new(self.clone_inner());
-                let handle = tokio::spawn(service.clone().run_session(session.clone(), to));
-                self.tasks.write().await.insert(session_id, handle);
-            }
-            // Si no está corriendo, el seek solo reposiciona el reloj (ya lo hace SessionsService)
-            // Limpiamos caché de últimas velas y no lanzamos runner.
-            SessionStatus::Created | SessionStatus::Paused | SessionStatus::Ended => {
-                let mut guard = self.latest.write().await;
-                guard.retain(|(id, _), _| *id != session_id);
-            }
+        if session.status != SessionStatus::Running {
+            info!(
+                session_id = %session_id,
+                status = ?session.status,
+                "seek requested for non-running session; skipping replay restart"
+            );
+            let mut guard = self.latest.write().await;
+            guard.retain(|(id, _), _| *id != session_id);
+            return Ok(());
         }
+
+        let service = Arc::new(self.clone_inner());
+        let handle = tokio::spawn(service.clone().run_session(session.clone(), to));
+        self.tasks.write().await.insert(session_id, handle);
 
         Ok(())
     }
