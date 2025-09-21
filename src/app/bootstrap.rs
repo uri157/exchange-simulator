@@ -5,8 +5,7 @@ use axum::{
     http::{Request, Response},
     Extension, Router,
 };
-use tower::BoxError;
-use tower_http::trace::TraceLayer;
+use tower_http::{classify::ServerErrorsFailureClass, trace::TraceLayer};
 use tracing::{info, warn, Span};
 use uuid::Uuid;
 
@@ -157,16 +156,28 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
                 "request_finished"
             );
         })
-        .on_failure(|error: BoxError, latency: Duration, span: &Span| {
-            span.record("status", &tracing::field::display("error"));
-            tracing::error!(
-                parent: span,
-                error = %error,
-                latency_ms = latency.as_millis(),
-                "request_failed"
-            );
+        .on_failure(|failure: ServerErrorsFailureClass, latency: Duration, span: &Span| {
+            match failure {
+                ServerErrorsFailureClass::StatusCode(status) => {
+                    span.record("status", &tracing::field::display(status));
+                    tracing::error!(
+                        parent: span,
+                        status = %status,
+                        latency_ms = latency.as_millis(),
+                        "request_failed"
+                    );
+                }
+                ServerErrorsFailureClass::Error(err) => {
+                    span.record("status", &tracing::field::display("error"));
+                    tracing::error!(
+                        parent: span,
+                        error = %err,
+                        latency_ms = latency.as_millis(),
+                        "request_failed"
+                    );
+                }
+            }
         });
 
-    // Router stateless + estado por Extension
     Ok(create_router().layer(trace_layer).layer(Extension(state)))
 }
