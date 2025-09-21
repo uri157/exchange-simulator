@@ -1,7 +1,14 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use axum::{Extension, Router};
-use tracing::{info, warn};
+use axum::{
+    body::Body,
+    http::{Request, Response},
+    Extension, Router,
+};
+use tower::BoxError;
+use tower_http::trace::TraceLayer;
+use tracing::{info, warn, Span};
+use uuid::Uuid;
 
 use crate::{
     app::router::create_router,
@@ -126,6 +133,40 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
         duck_pool: pool.clone(),
     };
 
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(|request: &Request<Body>| {
+            let req_id = Uuid::new_v4();
+            tracing::info_span!(
+                "http_request",
+                %req_id,
+                method = %request.method(),
+                path = %request.uri().path(),
+                query = %request.uri().query().unwrap_or(""),
+                status = tracing::field::Empty
+            )
+        })
+        .on_request(|_request: &Request<Body>, span: &Span| {
+            tracing::info!(parent: span, "request_started");
+        })
+        .on_response(|response: &Response<_>, latency: Duration, span: &Span| {
+            span.record("status", &tracing::field::display(response.status()));
+            tracing::info!(
+                parent: span,
+                status = %response.status(),
+                latency_ms = latency.as_millis(),
+                "request_finished"
+            );
+        })
+        .on_failure(|error: BoxError, latency: Duration, span: &Span| {
+            span.record("status", &tracing::field::display("error"));
+            tracing::error!(
+                parent: span,
+                error = %error,
+                latency_ms = latency.as_millis(),
+                "request_failed"
+            );
+        });
+
     // Router stateless + estado por Extension
-    Ok(create_router().layer(Extension(state)))
+    Ok(create_router().layer(trace_layer).layer(Extension(state)))
 }
