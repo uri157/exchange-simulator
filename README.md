@@ -300,3 +300,20 @@ curl -sS -X POST "http://localhost:3001/api/v1/sessions/$SESS_ID/start"
 ---
 
 Listo. Con esto, cualquier IA (y humana) puede levantar, entender, testear y extender el proyecto de inmediato.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
