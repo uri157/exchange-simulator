@@ -1,18 +1,23 @@
 use std::{
     env,
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
 use dotenvy::dotenv;
 
-use crate::{domain::value_objects::Speed, error::AppError};
+use crate::{
+    domain::{models::MarketMode, value_objects::Speed},
+    error::AppError,
+};
 
 #[derive(Clone, Debug)]
 pub struct AppConfig {
     pub port: u16,
-    pub duckdb_path: String,      // siempre absoluto
-    pub data_dir: String,         // puede ser relativo, solo informativo
+    pub duckdb_path: String, // siempre absoluto
+    pub data_dir: String,    // puede ser relativo, solo informativo
     pub default_speed: Speed,
+    pub default_market_mode: MarketMode,
     pub ws_buffer: usize,
     pub max_session_clients: usize,
 }
@@ -40,6 +45,10 @@ impl AppConfig {
             .parse()
             .map_err(|err| AppError::Validation(format!("invalid DEFAULT_SPEED: {err}")))?;
 
+        let default_market_mode =
+            env::var("DEFAULT_MARKET_MODE").unwrap_or_else(|_| "kline".to_string());
+        let default_market_mode = MarketMode::from_str(&default_market_mode)?;
+
         let ws_buffer: usize = env::var("WS_BUFFER")
             .unwrap_or_else(|_| "1024".to_string())
             .parse()
@@ -55,6 +64,7 @@ impl AppConfig {
             duckdb_path,
             data_dir,
             default_speed: Speed::from(default_speed),
+            default_market_mode,
             ws_buffer,
             max_session_clients,
         })

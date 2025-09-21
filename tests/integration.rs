@@ -4,21 +4,22 @@ use std::time::Duration;
 use tempfile::tempdir;
 use tokio::time::timeout;
 
+use duckdb::params;
 use exchange_simulator::domain::{
-    models::{DatasetFormat, OrderSide, OrderStatus, OrderType},
-    traits::{AccountsRepo, MarketIngestor, MarketStore, OrdersRepo, ReplayEngine, SessionsRepo},
-    value_objects::{DatasetPath, Interval, Quantity, Speed, TimestampMs},
+    models::{MarketMode, OrderSide, OrderStatus, OrderType},
+    traits::{AccountsRepo, MarketStore, OrdersRepo, ReplayEngine, SessionsRepo},
+    value_objects::{Interval, Quantity, Speed, TimestampMs},
 };
+use exchange_simulator::error::AppError;
 use exchange_simulator::infra::{
     clock::SimulatedClock,
-    duckdb::{db::DuckDbPool, ingest_repo::DuckDbIngestRepo, market_repo::DuckDbMarketStore},
+    duckdb::{db::DuckDbPool, market_repo::DuckDbMarketStore},
     repos::memory::{MemoryAccountsRepo, MemoryOrdersRepo, MemorySessionsRepo},
     ws::broadcaster::SessionBroadcaster,
 };
 use exchange_simulator::services::{
-    account_service::AccountService, ingest_service::IngestService, market_service::MarketService,
-    orders_service::OrdersService, replay_service::ReplayService,
-    sessions_service::SessionsService,
+    account_service::AccountService, market_service::MarketService, orders_service::OrdersService,
+    replay_service::ReplayService, sessions_service::SessionsService,
 };
 
 #[tokio::test]
@@ -27,25 +28,40 @@ async fn ingest_replay_and_order_flow() {
     let db_path = tmp.path().join("market.duckdb");
     let pool = DuckDbPool::new(db_path.to_str().unwrap()).unwrap();
 
-    let csv_path = tmp.path().join("klines.csv");
-    std::fs::write(
-        &csv_path,
-        "symbol,interval,open_time,open,high,low,close,volume,close_time\nBTCUSDT,1m,0,100,110,90,105,10,60000\nBTCUSDT,1m,60000,105,115,100,110,12,120000\n",
-    )
-    .unwrap();
-
     let market_store: Arc<dyn MarketStore> = Arc::new(DuckDbMarketStore::new(pool.clone()));
-    let ingestor: Arc<dyn MarketIngestor> = Arc::new(DuckDbIngestRepo::new(pool.clone()));
-    let ingest_service = Arc::new(IngestService::new(ingestor.clone()));
-    let dataset = ingest_service
-        .register_dataset(
-            "test",
-            DatasetPath::from(csv_path.to_string_lossy().to_string()),
-            DatasetFormat::Csv,
+    const INTERVAL_MS: i64 = 60_000;
+    const NUM_KLINES: i64 = 10;
+
+    pool.with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO symbols (symbol, base, quote, active) VALUES (?1, ?2, ?3, TRUE)",
+            params!["BTCUSDT", "BTC", "USDT"],
         )
-        .await
-        .unwrap();
-    ingest_service.ingest_dataset(dataset.id).await.unwrap();
+        .map_err(|err| AppError::Database(format!("insert symbol failed: {err}")))?;
+        for i in 0..NUM_KLINES {
+            let open_time = i * INTERVAL_MS;
+            let close_time = open_time + INTERVAL_MS;
+            let base_price = 100.0 + i as f64;
+            conn.execute(
+                "INSERT INTO klines (symbol, interval, open_time, open, high, low, close, volume, close_time) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    "BTCUSDT",
+                    "1m",
+                    open_time,
+                    base_price,
+                    base_price + 10.0,
+                    base_price - 10.0,
+                    base_price + 5.0,
+                    10.0 + i as f64,
+                    close_time
+                ],
+            )
+            .map_err(|err| AppError::Database(format!("insert kline failed: {err}")))?;
+        }
+        Ok(())
+    })
+    .unwrap();
 
     let market_service = Arc::new(MarketService::new(market_store.clone()));
     assert_eq!(market_service.exchange_info().await.unwrap().len(), 1);
@@ -81,6 +97,7 @@ async fn ingest_replay_and_order_flow() {
         clock_trait.clone(),
         replay_engine.clone(),
         broadcaster.clone(),
+        MarketMode::Kline,
     ));
 
     let session = sessions_service
@@ -88,9 +105,10 @@ async fn ingest_replay_and_order_flow() {
             vec!["BTCUSDT".to_string()],
             Interval::new("1m"),
             TimestampMs(0),
-            TimestampMs(120000),
+            TimestampMs(NUM_KLINES * INTERVAL_MS),
             Speed(1.0),
             42,
+            None,
         )
         .await
         .unwrap();
@@ -104,6 +122,11 @@ async fn ingest_replay_and_order_flow() {
         .expect("stream message")
         .unwrap();
     assert!(message.contains("kline"));
+
+    sessions_service
+        .pause_session(session.session_id)
+        .await
+        .unwrap();
 
     let (order, fills) = orders_service
         .place_order(

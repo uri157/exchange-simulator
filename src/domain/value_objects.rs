@@ -6,6 +6,8 @@ use utoipa::ToSchema;
 
 use crate::error::AppError;
 
+pub type Decimal = f64;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ToSchema)]
 #[serde(transparent)]
 pub struct TimestampMs(pub i64);

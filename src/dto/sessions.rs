@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::domain::models::{SessionConfig, SessionStatus};
+use crate::domain::models::{MarketMode, SessionConfig, SessionStatus};
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -13,6 +13,7 @@ pub struct CreateSessionRequest {
     pub end_time: i64,
     pub speed: Option<f64>,
     pub seed: Option<u64>,
+    pub market_mode: Option<MarketMode>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -30,6 +31,7 @@ pub struct SessionResponse {
     pub start_time: i64,
     pub end_time: i64,
     pub speed: f64,
+    pub market_mode: MarketMode,
     pub enabled: bool,
     pub status: SessionStatus,
     pub seed: u64,
@@ -45,6 +47,7 @@ impl From<SessionConfig> for SessionResponse {
             start_time: value.start_time.0,
             end_time: value.end_time.0,
             speed: value.speed.0,
+            market_mode: value.market_mode,
             enabled: value.enabled,
             status: value.status,
             seed: value.seed,

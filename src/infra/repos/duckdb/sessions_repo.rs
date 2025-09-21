@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        models::{SessionConfig, SessionStatus},
+        models::{MarketMode, SessionConfig, SessionStatus},
         traits::SessionsRepo,
         value_objects::{Interval, Speed, TimestampMs},
     },
@@ -35,6 +35,7 @@ impl DuckDbSessionsRepo {
                 start_time BIGINT,
                 end_time BIGINT,
                 speed DOUBLE,
+                market_mode TEXT,
                 status TEXT,
                 seed BIGINT,
                 created_at BIGINT,
@@ -47,6 +48,17 @@ impl DuckDbSessionsRepo {
             conn.execute(SQL, []).map_err(|err| {
                 AppError::Database(format!("create sessions table failed: {err}"))
             })?;
+            if let Err(err) = conn.execute(
+                "ALTER TABLE sessions ADD COLUMN market_mode TEXT DEFAULT 'kline'",
+                [],
+            ) {
+                let msg = err.to_string();
+                if !msg.contains("Duplicate column") && !msg.contains("already exists") {
+                    return Err(AppError::Database(format!(
+                        "alter sessions add market_mode failed: {err}"
+                    )));
+                }
+            }
             if let Err(err) = conn.execute(
                 "ALTER TABLE sessions ADD COLUMN enabled BOOLEAN DEFAULT TRUE",
                 [],
@@ -112,23 +124,30 @@ impl DuckDbSessionsRepo {
         let speed_val: f64 = row
             .get(5)
             .map_err(|err| AppError::Database(format!("session column error: {err}")))?;
-        let status_str: String = row
+        let market_mode_str: Option<String> = row
             .get(6)
+            .map_err(|err| AppError::Database(format!("session column error: {err}")))?;
+        let market_mode = market_mode_str
+            .as_deref()
+            .unwrap_or("kline")
+            .parse::<MarketMode>()?;
+        let status_str: String = row
+            .get(7)
             .map_err(|err| AppError::Database(format!("session column error: {err}")))?;
         let status = Self::status_from_str(&status_str)?;
         let seed_val: i64 = row
-            .get(7)
+            .get(8)
             .map_err(|err| AppError::Database(format!("session column error: {err}")))?;
         let seed = u64::try_from(seed_val)
             .map_err(|err| AppError::Database(format!("invalid session seed: {err}")))?;
         let created_at: i64 = row
-            .get(8)
-            .map_err(|err| AppError::Database(format!("session column error: {err}")))?;
-        let updated_at: i64 = row
             .get(9)
             .map_err(|err| AppError::Database(format!("session column error: {err}")))?;
-        let enabled: Option<bool> = row
+        let updated_at: i64 = row
             .get(10)
+            .map_err(|err| AppError::Database(format!("session column error: {err}")))?;
+        let enabled: Option<bool> = row
+            .get(11)
             .map_err(|err| AppError::Database(format!("session column error: {err}")))?;
         let enabled = enabled.unwrap_or(true);
 
@@ -139,6 +158,7 @@ impl DuckDbSessionsRepo {
             start_time: TimestampMs(start_time),
             end_time: TimestampMs(end_time),
             speed: Speed(speed_val),
+            market_mode,
             enabled,
             status,
             seed,
@@ -153,7 +173,7 @@ impl DuckDbSessionsRepo {
         pool.with_conn_async(move |conn| {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, symbols, interval, start_time, end_time, speed, status, seed, created_at, updated_at, enabled \
+                    "SELECT id, symbols, interval, start_time, end_time, speed, market_mode, status, seed, created_at, updated_at, enabled \
                      FROM sessions WHERE id = ?1",
                 )
                 .map_err(|err| AppError::Database(format!("prepare session get failed: {err}")))?;
@@ -181,8 +201,8 @@ impl SessionsRepo for DuckDbSessionsRepo {
             let seed_val = i64::try_from(to_insert.seed)
                 .map_err(|err| AppError::Database(format!("invalid session seed: {err}")))?;
             conn.execute(
-                "INSERT INTO sessions (id, symbols, interval, start_time, end_time, speed, status, seed, created_at, updated_at, enabled) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                "INSERT INTO sessions (id, symbols, interval, start_time, end_time, speed, market_mode, status, seed, created_at, updated_at, enabled) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     to_insert.session_id.to_string(),
                     symbols,
@@ -190,6 +210,7 @@ impl SessionsRepo for DuckDbSessionsRepo {
                     to_insert.start_time.0,
                     to_insert.end_time.0,
                     to_insert.speed.0,
+                    to_insert.market_mode.to_string(),
                     Self::status_to_str(&to_insert.status),
                     seed_val,
                     to_insert.created_at.0,
@@ -266,7 +287,7 @@ impl SessionsRepo for DuckDbSessionsRepo {
         pool.with_conn_async(|conn| {
             let mut stmt = conn
                 .prepare(
-                    "SELECT id, symbols, interval, start_time, end_time, speed, status, seed, created_at, updated_at, enabled \
+                    "SELECT id, symbols, interval, start_time, end_time, speed, market_mode, status, seed, created_at, updated_at, enabled \
                      FROM sessions ORDER BY created_at DESC",
                 )
                 .map_err(|err| AppError::Database(format!("prepare session list failed: {err}")))?;

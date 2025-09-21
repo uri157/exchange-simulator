@@ -118,6 +118,7 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
         clock_trait.clone(),
         replay_engine,
         broadcaster.clone(),
+        config.default_market_mode,
     ));
 
     let state = AppState {
@@ -156,8 +157,8 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
                 "request_finished"
             );
         })
-        .on_failure(|failure: ServerErrorsFailureClass, latency: Duration, span: &Span| {
-            match failure {
+        .on_failure(
+            |failure: ServerErrorsFailureClass, latency: Duration, span: &Span| match failure {
                 ServerErrorsFailureClass::StatusCode(status) => {
                     span.record("status", &tracing::field::display(status));
                     tracing::error!(
@@ -176,8 +177,8 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
                         "request_failed"
                     );
                 }
-            }
-        });
+            },
+        );
 
     Ok(create_router().layer(trace_layer).layer(Extension(state)))
 }

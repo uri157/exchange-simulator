@@ -27,6 +27,16 @@ pub fn apply_schema(conn: &Connection) -> Result<(), AppError> {
             close_time BIGINT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS agg_trades(
+            symbol          TEXT   NOT NULL,
+            event_time      BIGINT NOT NULL,
+            trade_id        BIGINT NOT NULL,
+            price           DOUBLE NOT NULL,
+            qty             DOUBLE NOT NULL,
+            quote_qty       DOUBLE NOT NULL,
+            is_buyer_maker  BOOLEAN NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS datasets(
             id         UUID   PRIMARY KEY,
             symbol     TEXT   NOT NULL,
@@ -54,6 +64,10 @@ pub fn apply_schema(conn: &Connection) -> Result<(), AppError> {
         -- Búsquedas típicas por datasets
         CREATE INDEX IF NOT EXISTS ix_datasets_symbol_interval
             ON datasets(symbol, interval);
+
+        -- Acceso típico por símbolo y tiempo en agg trades
+        CREATE INDEX IF NOT EXISTS idx_agg_trades_symbol_time
+            ON agg_trades(symbol, event_time);
     "#;
 
     for stmt in SQL.split(';') {
