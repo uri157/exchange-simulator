@@ -97,31 +97,56 @@ pub enum OrderStatus {
     Filled,
     PartiallyFilled,
     Canceled,
+    Expired,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum Liquidity {
+    Maker,
+    Taker,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct Order {
-    pub order_id: Uuid,
+    pub id: Uuid,
     pub session_id: Uuid,
     pub client_order_id: Option<String>,
     pub symbol: String,
     pub side: OrderSide,
+    #[serde(rename = "type")]
     pub order_type: OrderType,
     pub price: Option<Price>,
     pub quantity: Quantity,
     pub filled_quantity: Quantity,
     pub status: OrderStatus,
     pub created_at: TimestampMs,
+    pub updated_at: TimestampMs,
+    pub maker_taker: Option<Liquidity>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct Fill {
     pub order_id: Uuid,
+    pub session_id: Uuid,
     pub symbol: String,
+    pub trade_id: i64,
     pub price: Price,
-    pub quantity: Quantity,
-    pub fee: Price,
-    pub trade_time: TimestampMs,
+    pub qty: Quantity,
+    pub quote_qty: Decimal,
+    pub fee: Decimal,
+    pub fee_asset: String,
+    pub maker: bool,
+    pub event_time: TimestampMs,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+pub struct FeeConfig {
+    pub maker_bps: u32,
+    pub taker_bps: u32,
+    pub partial_fills: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

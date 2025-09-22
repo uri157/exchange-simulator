@@ -36,7 +36,7 @@ pub async fn new_order(
     Extension(state): Extension<AppState>,
     Json(payload): Json<NewOrderRequest>,
 ) -> ApiResult<Json<NewOrderResponse>> {
-    let (order, fills) = state
+    let order = state
         .orders_service
         .place_order(
             payload.session_id,
@@ -49,8 +49,14 @@ pub async fn new_order(
         )
         .await?;
     Ok(Json(NewOrderResponse {
-        order: order.into(),
-        fills: fills.into_iter().map(FillResponse::from).collect(),
+        order: order.clone().into(),
+        fills: state
+            .orders_service
+            .order_fills(payload.session_id, order.id)
+            .await?
+            .into_iter()
+            .map(FillResponse::from)
+            .collect(),
     }))
 }
 
@@ -106,7 +112,7 @@ pub async fn cancel_order(
             .await?;
         state
             .orders_service
-            .cancel_order(params.session_id, order.order_id)
+            .cancel_order(params.session_id, order.id)
             .await?
     } else {
         return Err(crate::error::AppError::Validation(

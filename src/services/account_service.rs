@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::domain::{
     models::{AccountSnapshot, Balance, OrderSide},
     traits::AccountsRepo,
-    value_objects::{Price, Quantity},
+    value_objects::Quantity,
 };
 
 use super::ServiceResult;
@@ -51,13 +51,19 @@ impl AccountService {
         self.repo.get_account(session_id).await
     }
 
-    pub async fn apply_fill(
+    pub fn default_quote_asset(&self) -> &str {
+        &self.default_quote
+    }
+
+    pub async fn apply_execution(
         &self,
         session_id: Uuid,
         symbol: &str,
         side: OrderSide,
-        price: Price,
-        quantity: Quantity,
+        base_qty: Quantity,
+        quote_amount: f64,
+        fee: f64,
+        fee_asset: &str,
     ) -> ServiceResult<AccountSnapshot> {
         let mut snapshot = self.repo.get_account(session_id).await?;
         let (base, quote) = split_symbol(symbol, &self.default_quote);
@@ -68,8 +74,6 @@ impl AccountService {
             .map(|b| (b.asset.clone(), b))
             .collect();
 
-        let trade_value = price.0 * quantity.0;
-
         match side {
             OrderSide::Buy => {
                 // quote --
@@ -79,7 +83,7 @@ impl AccountService {
                         free: Quantity::default(),
                         locked: Quantity::default(),
                     });
-                    q.free = Quantity(q.free.0 - trade_value);
+                    q.free = Quantity(q.free.0 - quote_amount - fee);
                 }
                 // base ++
                 {
@@ -88,7 +92,18 @@ impl AccountService {
                         free: Quantity::default(),
                         locked: Quantity::default(),
                     });
-                    b.free = Quantity(b.free.0 + quantity.0);
+                    b.free = Quantity(b.free.0 + base_qty.0);
+                }
+                if fee_asset != quote {
+                    let fee_balance =
+                        balances
+                            .entry(fee_asset.to_string())
+                            .or_insert_with(|| Balance {
+                                asset: fee_asset.to_string(),
+                                free: Quantity::default(),
+                                locked: Quantity::default(),
+                            });
+                    fee_balance.free = Quantity(fee_balance.free.0 - fee);
                 }
             }
             OrderSide::Sell => {
@@ -99,7 +114,7 @@ impl AccountService {
                         free: Quantity::default(),
                         locked: Quantity::default(),
                     });
-                    b.free = Quantity(b.free.0 - quantity.0);
+                    b.free = Quantity(b.free.0 - base_qty.0);
                 }
                 // quote ++
                 {
@@ -108,7 +123,19 @@ impl AccountService {
                         free: Quantity::default(),
                         locked: Quantity::default(),
                     });
-                    q.free = Quantity(q.free.0 + trade_value);
+                    let credit = quote_amount - fee;
+                    q.free = Quantity(q.free.0 + credit);
+                }
+                if fee_asset != quote {
+                    let fee_balance =
+                        balances
+                            .entry(fee_asset.to_string())
+                            .or_insert_with(|| Balance {
+                                asset: fee_asset.to_string(),
+                                free: Quantity::default(),
+                                locked: Quantity::default(),
+                            });
+                    fee_balance.free = Quantity(fee_balance.free.0 - fee);
                 }
             }
         }
@@ -119,7 +146,7 @@ impl AccountService {
     }
 }
 
-fn split_symbol(symbol: &str, default_quote: &str) -> (String, String) {
+pub fn split_symbol(symbol: &str, default_quote: &str) -> (String, String) {
     const COMMON_QUOTES: [&str; 6] = ["USDT", "USD", "BUSD", "USDC", "BTC", "ETH"];
 
     for quote in COMMON_QUOTES.iter().chain(std::iter::once(&default_quote)) {

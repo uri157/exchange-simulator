@@ -7,13 +7,15 @@ use tokio::time::timeout;
 use duckdb::params;
 use exchange_simulator::domain::{
     models::{MarketMode, OrderSide, OrderStatus, OrderType},
-    traits::{AccountsRepo, MarketStore, OrdersRepo, ReplayEngine, SessionsRepo},
+    traits::{AccountsRepo, AggTradesStore, MarketStore, OrdersRepo, ReplayEngine, SessionsRepo},
     value_objects::{Interval, Quantity, Speed, TimestampMs},
 };
 use exchange_simulator::error::AppError;
 use exchange_simulator::infra::{
     clock::SimulatedClock,
-    duckdb::{db::DuckDbPool, market_repo::DuckDbMarketStore},
+    duckdb::{
+        agg_trades_repo::DuckDbAggTradesStore, db::DuckDbPool, market_repo::DuckDbMarketStore,
+    },
     repos::memory::{MemoryAccountsRepo, MemoryOrdersRepo, MemorySessionsRepo},
     ws::broadcaster::SessionBroadcaster,
 };
@@ -73,11 +75,15 @@ async fn ingest_replay_and_order_flow() {
     let clock_trait: Arc<dyn exchange_simulator::domain::traits::Clock> = clock.clone();
     let broadcaster = SessionBroadcaster::new(16);
 
+    let agg_trades_store: Arc<dyn AggTradesStore> =
+        Arc::new(DuckDbAggTradesStore::new(pool.clone()));
     let replay_service = Arc::new(ReplayService::new(
         market_store.clone(),
+        agg_trades_store.clone(),
         clock_trait.clone(),
         sessions_repo.clone(),
         broadcaster.clone(),
+        None,
     ));
     let replay_engine: Arc<dyn ReplayEngine> = replay_service.clone();
 
@@ -91,6 +97,7 @@ async fn ingest_replay_and_order_flow() {
         sessions_repo.clone(),
         account_service.clone(),
         replay_service.clone(),
+        clock_trait.clone(),
     ));
     let sessions_service = Arc::new(SessionsService::new(
         sessions_repo.clone(),
@@ -128,7 +135,7 @@ async fn ingest_replay_and_order_flow() {
         .await
         .unwrap();
 
-    let (order, fills) = orders_service
+    let order = orders_service
         .place_order(
             session.session_id,
             "BTCUSDT".to_string(),
@@ -140,8 +147,7 @@ async fn ingest_replay_and_order_flow() {
         )
         .await
         .unwrap();
-    assert_eq!(order.status, OrderStatus::Filled);
-    assert_eq!(fills.len(), 1);
+    assert_eq!(order.status, OrderStatus::New);
 
     let account = account_service
         .get_account(session.session_id)

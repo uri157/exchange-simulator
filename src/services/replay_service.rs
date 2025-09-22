@@ -14,7 +14,7 @@ use crate::{
     infra::ws::broadcaster::SessionBroadcaster,
 };
 
-use super::ServiceResult;
+use super::{matching_spot::SpotMatcher, ServiceResult};
 
 pub struct ReplayService {
     market_store: Arc<dyn MarketStore>,
@@ -22,6 +22,7 @@ pub struct ReplayService {
     clock: Arc<dyn Clock>,
     sessions_repo: Arc<dyn SessionsRepo>,
     broadcaster: SessionBroadcaster,
+    spot_matcher: Option<Arc<SpotMatcher>>,
     tasks: Arc<RwLock<HashMap<Uuid, JoinHandle<()>>>>,
     latest_klines: Arc<RwLock<HashMap<(Uuid, String), Kline>>>,
     latest_trades: Arc<RwLock<HashMap<(Uuid, String), AggTrade>>>,
@@ -34,6 +35,7 @@ impl ReplayService {
         clock: Arc<dyn Clock>,
         sessions_repo: Arc<dyn SessionsRepo>,
         broadcaster: SessionBroadcaster,
+        spot_matcher: Option<Arc<SpotMatcher>>,
     ) -> Self {
         Self {
             market_store,
@@ -41,6 +43,7 @@ impl ReplayService {
             clock,
             sessions_repo,
             broadcaster,
+            spot_matcher,
             tasks: Arc::new(RwLock::new(HashMap::new())),
             latest_klines: Arc::new(RwLock::new(HashMap::new())),
             latest_trades: Arc::new(RwLock::new(HashMap::new())),
@@ -102,6 +105,10 @@ impl ReplayService {
             .await
         {
             error!(%err, "failed to set session ended");
+        }
+
+        if let Some(matcher) = &self.spot_matcher {
+            matcher.on_session_end(session.session_id).await;
         }
 
         if let Err(err) = self.clock.pause(session.session_id).await {
@@ -340,6 +347,10 @@ impl ReplayService {
                 error!(%err, "broadcast failed");
             }
 
+            if let Some(matcher) = &self.spot_matcher {
+                matcher.on_trade(session.session_id, &trade).await;
+            }
+
             previous = trade.event_time;
         }
 
@@ -535,6 +546,7 @@ impl ReplayService {
             clock: Arc::clone(&self.clock),
             sessions_repo: Arc::clone(&self.sessions_repo),
             broadcaster: self.broadcaster.clone(),
+            spot_matcher: self.spot_matcher.clone(),
             tasks: Arc::clone(&self.tasks),
             latest_klines: Arc::clone(&self.latest_klines),
             latest_trades: Arc::clone(&self.latest_trades),

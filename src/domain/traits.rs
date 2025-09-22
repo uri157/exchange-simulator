@@ -4,8 +4,8 @@ use uuid::Uuid;
 use crate::{
     domain::{
         models::{
-            AccountSnapshot, AggTrade, DatasetMetadata, Fill, Kline, Order, SessionConfig,
-            SessionStatus, Symbol,
+            AccountSnapshot, AggTrade, DatasetMetadata, FeeConfig, Fill, Kline, Order,
+            SessionConfig, SessionStatus, Symbol,
         },
         value_objects::{Interval, Speed, TimestampMs},
     },
@@ -70,7 +70,8 @@ pub trait SessionsRepo: Send + Sync {
 
 #[async_trait]
 pub trait OrdersRepo: Send + Sync {
-    async fn upsert(&self, order: Order) -> Result<Order, AppError>;
+    async fn create(&self, order: Order) -> Result<Order, AppError>;
+    async fn update(&self, order: Order) -> Result<Order, AppError>;
     async fn get(&self, session_id: Uuid, order_id: Uuid) -> Result<Order, AppError>;
     async fn get_by_client_id(&self, session_id: Uuid, client_id: &str) -> Result<Order, AppError>;
     async fn list_open(
@@ -78,6 +79,21 @@ pub trait OrdersRepo: Send + Sync {
         session_id: Uuid,
         symbol: Option<&str>,
     ) -> Result<Vec<Order>, AppError>;
+    async fn list_active(&self, session_id: Uuid) -> Result<Vec<Order>, AppError>;
+    async fn cancel(&self, session_id: Uuid, order_id: Uuid) -> Result<Order, AppError>;
+    async fn mark_expired_for_session(&self, session_id: Uuid) -> Result<Vec<Order>, AppError>;
+    async fn append_fill(&self, fill: Fill) -> Result<(), AppError>;
+    async fn list_fills(
+        &self,
+        session_id: Uuid,
+        symbol: Option<&str>,
+    ) -> Result<Vec<Fill>, AppError>;
+    async fn list_order_fills(
+        &self,
+        session_id: Uuid,
+        order_id: Uuid,
+    ) -> Result<Vec<Fill>, AppError>;
+    async fn has_fill(&self, order_id: Uuid, trade_id: i64) -> Result<bool, AppError>;
 }
 
 #[async_trait]
@@ -109,11 +125,4 @@ pub trait ReplayEngine: Send + Sync {
 }
 
 #[async_trait]
-pub trait OrderBookSim: Send + Sync {
-    async fn new_order(
-        &self,
-        session_id: Uuid,
-        order: Order,
-    ) -> Result<(Order, Vec<Fill>), AppError>;
-    async fn cancel_order(&self, session_id: Uuid, order_id: Uuid) -> Result<Order, AppError>;
-}
+pub trait OrderBookSim: Send + Sync {}

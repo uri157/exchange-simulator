@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use crate::domain::models::{Fill, Order, OrderSide, OrderStatus, OrderType};
+use crate::domain::models::{Fill, Liquidity, Order, OrderSide, OrderStatus, OrderType};
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -30,13 +30,14 @@ pub struct OrderResponse {
     pub price: Option<f64>,
     pub orig_qty: f64,
     pub executed_qty: f64,
+    pub maker_taker: Option<String>,
 }
 
 impl From<Order> for OrderResponse {
     fn from(value: Order) -> Self {
         Self {
             symbol: value.symbol,
-            order_id: value.order_id,
+            order_id: value.id,
             client_order_id: value.client_order_id,
             order_type: value.order_type,
             side: value.side,
@@ -44,6 +45,10 @@ impl From<Order> for OrderResponse {
             price: value.price.map(|p| p.0),
             orig_qty: value.quantity.0,
             executed_qty: value.filled_quantity.0,
+            maker_taker: value.maker_taker.map(|liquidity| match liquidity {
+                Liquidity::Maker => "MAKER".to_string(),
+                Liquidity::Taker => "TAKER".to_string(),
+            }),
         }
     }
 }
@@ -53,7 +58,11 @@ impl From<Order> for OrderResponse {
 pub struct FillResponse {
     pub price: f64,
     pub qty: f64,
+    pub quote_qty: f64,
     pub commission: f64,
+    pub commission_asset: String,
+    pub trade_id: i64,
+    pub maker: bool,
     pub time: i64,
 }
 
@@ -61,9 +70,13 @@ impl From<Fill> for FillResponse {
     fn from(value: Fill) -> Self {
         Self {
             price: value.price.0,
-            qty: value.quantity.0,
-            commission: value.fee.0,
-            time: value.trade_time.0,
+            qty: value.qty.0,
+            quote_qty: value.quote_qty,
+            commission: value.fee,
+            commission_asset: value.fee_asset,
+            trade_id: value.trade_id,
+            maker: value.maker,
+            time: value.event_time.0,
         }
     }
 }

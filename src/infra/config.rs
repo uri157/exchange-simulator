@@ -7,7 +7,10 @@ use std::{
 use dotenvy::dotenv;
 
 use crate::{
-    domain::{models::MarketMode, value_objects::Speed},
+    domain::{
+        models::{FeeConfig, MarketMode},
+        value_objects::Speed,
+    },
     error::AppError,
 };
 
@@ -20,6 +23,7 @@ pub struct AppConfig {
     pub default_market_mode: MarketMode,
     pub ws_buffer: usize,
     pub max_session_clients: usize,
+    pub fees: FeeConfig,
 }
 
 impl AppConfig {
@@ -59,6 +63,19 @@ impl AppConfig {
             .parse()
             .map_err(|err| AppError::Validation(format!("invalid MAX_SESSION_CLIENTS: {err}")))?;
 
+        let maker_bps: u32 = env::var("FEES_MAKER_BPS")
+            .unwrap_or_else(|_| "8".to_string())
+            .parse()
+            .map_err(|err| AppError::Validation(format!("invalid FEES_MAKER_BPS: {err}")))?;
+        let taker_bps: u32 = env::var("FEES_TAKER_BPS")
+            .unwrap_or_else(|_| "10".to_string())
+            .parse()
+            .map_err(|err| AppError::Validation(format!("invalid FEES_TAKER_BPS: {err}")))?;
+        let partial_fills: bool = env::var("FEES_PARTIAL_FILLS")
+            .unwrap_or_else(|_| "true".to_string())
+            .parse()
+            .map_err(|err| AppError::Validation(format!("invalid FEES_PARTIAL_FILLS: {err}")))?;
+
         Ok(Self {
             port,
             duckdb_path,
@@ -67,6 +84,11 @@ impl AppConfig {
             default_market_mode,
             ws_buffer,
             max_session_clients,
+            fees: FeeConfig {
+                maker_bps,
+                taker_bps,
+                partial_fills,
+            },
         })
     }
 }

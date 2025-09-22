@@ -28,7 +28,7 @@ use crate::{
         ws::broadcaster::SessionBroadcaster,
     },
     services::{
-        account_service::AccountService, market_service::MarketService,
+        account_service::AccountService, market_service::MarketService, matching_spot::SpotMatcher,
         orders_service::OrdersService, replay_service::ReplayService,
         sessions_service::SessionsService, IngestService,
     },
@@ -105,26 +105,34 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
 
     let broadcaster = SessionBroadcaster::new(config.ws_buffer);
 
-    let replay_service = Arc::new(ReplayService::new(
-        market_store.clone(),
-        agg_trades_store.clone(),
-        clock_trait.clone(),
-        sessions_repo.clone(),
-        broadcaster.clone(),
-    ));
-    let replay_engine: Arc<dyn crate::domain::traits::ReplayEngine> = replay_service.clone();
-
     let account_service = Arc::new(AccountService::new(
         accounts_repo.clone(),
         "USDT".to_string(),
         10_000.0,
     ));
 
+    let spot_matcher = Arc::new(SpotMatcher::new(
+        orders_repo.clone(),
+        account_service.clone(),
+        config.fees,
+    ));
+
+    let replay_service = Arc::new(ReplayService::new(
+        market_store.clone(),
+        agg_trades_store.clone(),
+        clock_trait.clone(),
+        sessions_repo.clone(),
+        broadcaster.clone(),
+        Some(spot_matcher.clone()),
+    ));
+    let replay_engine: Arc<dyn crate::domain::traits::ReplayEngine> = replay_service.clone();
+
     let orders_service = Arc::new(OrdersService::new(
         orders_repo.clone(),
         sessions_repo.clone(),
         account_service.clone(),
         replay_service.clone(),
+        clock_trait.clone(),
     ));
 
     let sessions_service = Arc::new(SessionsService::new(
