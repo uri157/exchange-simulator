@@ -1,26 +1,25 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use chrono::Utc;
-use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::{
     domain::{
-        models::{Fill, Kline, Order, OrderSide, OrderStatus, OrderType, SessionStatus},
-        traits::{OrderBookSim, OrdersRepo, SessionsRepo},
+        models::{Liquidity, Order, OrderSide, OrderStatus, OrderType, SessionStatus},
+        traits::{Clock, OrdersRepo, SessionsRepo},
         value_objects::{Price, Quantity, TimestampMs},
     },
     error::AppError,
 };
 
-use super::{ServiceResult, account_service::AccountService, replay_service::ReplayService};
+use super::{account_service::AccountService, replay_service::ReplayService, ServiceResult};
 
 pub struct OrdersService {
     repo: Arc<dyn OrdersRepo>,
     sessions_repo: Arc<dyn SessionsRepo>,
     accounts: Arc<AccountService>,
     replay: Arc<ReplayService>,
-    fills: Arc<RwLock<HashMap<Uuid, Vec<Fill>>>>,
+    clock: Arc<dyn Clock>,
 }
 
 impl OrdersService {
@@ -29,13 +28,14 @@ impl OrdersService {
         sessions_repo: Arc<dyn SessionsRepo>,
         accounts: Arc<AccountService>,
         replay: Arc<ReplayService>,
+        clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
             repo,
             sessions_repo,
             accounts,
             replay,
-            fills: Arc::new(RwLock::new(HashMap::new())),
+            clock,
         }
     }
 
@@ -53,11 +53,102 @@ impl OrdersService {
         Ok(())
     }
 
-    async fn current_kline(&self, session_id: Uuid, symbol: &str) -> ServiceResult<Kline> {
-        self.replay
-            .latest_kline(session_id, symbol)
+    async fn now(&self, session_id: Uuid) -> TimestampMs {
+        self.clock
+            .now(session_id)
+            .await
+            .unwrap_or_else(|_| TimestampMs::from(Utc::now().timestamp_millis()))
+    }
+
+    fn ensure_positive(quantity: Quantity) -> ServiceResult<()> {
+        if quantity.0 <= 0.0 {
+            return Err(AppError::Validation("quantity must be positive".into()));
+        }
+        Ok(())
+    }
+
+    pub async fn place_market(
+        &self,
+        session_id: Uuid,
+        symbol: String,
+        side: OrderSide,
+        quantity: Quantity,
+        client_order_id: Option<String>,
+    ) -> ServiceResult<Order> {
+        Self::ensure_positive(quantity)?;
+        self.validate_session(session_id, &symbol).await?;
+
+        let now = self.now(session_id).await;
+        let order = Order {
+            id: Uuid::new_v4(),
+            session_id,
+            client_order_id,
+            symbol,
+            side,
+            order_type: OrderType::Market,
+            price: None,
+            quantity,
+            filled_quantity: Quantity::default(),
+            status: OrderStatus::New,
+            created_at: now,
+            updated_at: now,
+            maker_taker: Some(Liquidity::Taker),
+        };
+
+        Ok(self.repo.create(order).await?)
+    }
+
+    pub async fn place_limit(
+        &self,
+        session_id: Uuid,
+        symbol: String,
+        side: OrderSide,
+        price: Price,
+        quantity: Quantity,
+        client_order_id: Option<String>,
+    ) -> ServiceResult<Order> {
+        if price.0 <= 0.0 {
+            return Err(AppError::Validation("price must be positive".into()));
+        }
+        Self::ensure_positive(quantity)?;
+        self.validate_session(session_id, &symbol).await?;
+
+        let latest_trade = self
+            .replay
+            .latest_trade(session_id, &symbol)
             .await?
-            .ok_or_else(|| AppError::Validation("no market data for session yet".into()))
+            .map(|trade| trade.price);
+
+        let maker_taker = latest_trade.and_then(|last_price| {
+            let crossed = match side {
+                OrderSide::Buy => last_price <= price.0,
+                OrderSide::Sell => last_price >= price.0,
+            };
+            if crossed {
+                Some(Liquidity::Taker)
+            } else {
+                None
+            }
+        });
+
+        let now = self.now(session_id).await;
+        let order = Order {
+            id: Uuid::new_v4(),
+            session_id,
+            client_order_id,
+            symbol,
+            side,
+            order_type: OrderType::Limit,
+            price: Some(price),
+            quantity,
+            filled_quantity: Quantity::default(),
+            status: OrderStatus::New,
+            created_at: now,
+            updated_at: now,
+            maker_taker,
+        };
+
+        Ok(self.repo.create(order).await?)
     }
 
     pub async fn place_order(
@@ -69,73 +160,30 @@ impl OrdersService {
         quantity: Quantity,
         price: Option<Price>,
         client_order_id: Option<String>,
-    ) -> ServiceResult<(Order, Vec<Fill>)> {
-        self.validate_session(session_id, &symbol).await?;
-        if quantity.0 <= 0.0 {
-            return Err(AppError::Validation("quantity must be positive".into()));
-        }
-        let order_id = Uuid::new_v4();
-        let now = TimestampMs::from(Utc::now().timestamp_millis());
-        let mut order = Order {
-            order_id,
-            session_id,
-            client_order_id,
-            symbol: symbol.clone(),
-            side: side.clone(),
-            order_type,
-            price,
-            quantity,
-            filled_quantity: Quantity::default(),
-            status: OrderStatus::New,
-            created_at: now,
-        };
-        let mut fills = Vec::new();
-        let latest = self.current_kline(session_id, &symbol).await?;
-        let execution_price = match order.order_type {
-            OrderType::Market => Some(latest.close),
-            OrderType::Limit => {
-                let limit_price = order
-                    .price
-                    .ok_or_else(|| AppError::Validation("limit order requires price".into()))?;
-                if should_fill_limit(&side, limit_price, &latest) {
-                    Some(limit_price)
-                } else {
-                    None
-                }
+    ) -> ServiceResult<Order> {
+        match order_type {
+            OrderType::Market => {
+                self.place_market(session_id, symbol, side, quantity, client_order_id)
+                    .await
             }
-        };
-
-        if let Some(exec_price) = execution_price {
-            let fill = Fill {
-                order_id,
-                symbol: symbol.clone(),
-                price: exec_price,
-                quantity,
-                fee: Price(0.0),
-                trade_time: latest.close_time,
-            };
-            fills.push(fill.clone());
-            order.status = OrderStatus::Filled;
-            order.filled_quantity = quantity;
-            self.accounts
-                .apply_fill(session_id, &symbol, side, exec_price, quantity)
-                .await?;
-            let mut guard = self.fills.write().await;
-            guard.entry(session_id).or_default().push(fill);
+            OrderType::Limit => {
+                let price = price
+                    .ok_or_else(|| AppError::Validation("limit order requires price".into()))?;
+                self.place_limit(session_id, symbol, side, price, quantity, client_order_id)
+                    .await
+            }
         }
-
-        self.repo.upsert(order.clone()).await?;
-        Ok((order, fills))
     }
 
     pub async fn cancel_order(&self, session_id: Uuid, order_id: Uuid) -> ServiceResult<Order> {
-        let mut order = self.repo.get(session_id, order_id).await?;
-        if matches!(order.status, OrderStatus::Filled | OrderStatus::Canceled) {
+        let order = self.repo.get(session_id, order_id).await?;
+        if matches!(
+            order.status,
+            OrderStatus::Filled | OrderStatus::Canceled | OrderStatus::Expired
+        ) {
             return Err(AppError::Validation("order cannot be canceled".into()));
         }
-        order.status = OrderStatus::Canceled;
-        self.repo.upsert(order.clone()).await?;
-        Ok(order)
+        Ok(self.repo.cancel(session_id, order_id).await?)
     }
 
     pub async fn get_order(&self, session_id: Uuid, order_id: Uuid) -> ServiceResult<Order> {
@@ -158,100 +206,22 @@ impl OrdersService {
         self.repo.list_open(session_id, symbol).await
     }
 
-    pub async fn my_trades(&self, session_id: Uuid, symbol: &str) -> ServiceResult<Vec<Fill>> {
-        let guard = self.fills.read().await;
-        let trades = guard
-            .get(&session_id)
-            .map(|fills| {
-                fills
-                    .iter()
-                    .filter(|f| f.symbol == symbol)
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
-        Ok(trades)
+    pub async fn my_trades(
+        &self,
+        session_id: Uuid,
+        symbol: &str,
+    ) -> ServiceResult<Vec<crate::domain::models::Fill>> {
+        self.repo.list_fills(session_id, Some(symbol)).await
+    }
+
+    pub async fn order_fills(
+        &self,
+        session_id: Uuid,
+        order_id: Uuid,
+    ) -> ServiceResult<Vec<crate::domain::models::Fill>> {
+        self.repo.list_order_fills(session_id, order_id).await
     }
 }
 
 #[async_trait::async_trait]
-impl OrderBookSim for OrdersService {
-    async fn new_order(
-        &self,
-        session_id: Uuid,
-        order: Order,
-    ) -> Result<(Order, Vec<Fill>), AppError> {
-        self.place_order(
-            session_id,
-            order.symbol.clone(),
-            order.side.clone(),
-            order.order_type,
-            order.quantity,
-            order.price,
-            order.client_order_id.clone(),
-        )
-        .await
-    }
-
-    async fn cancel_order(&self, session_id: Uuid, order_id: Uuid) -> Result<Order, AppError> {
-        self.cancel_order(session_id, order_id).await
-    }
-}
-
-fn should_fill_limit(side: &OrderSide, limit_price: Price, kline: &Kline) -> bool {
-    match side {
-        OrderSide::Buy => limit_price.0 >= kline.low.0,
-        OrderSide::Sell => limit_price.0 <= kline.high.0,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::domain::models::Kline;
-    use crate::domain::value_objects::{Interval, Price, Quantity, TimestampMs};
-
-    fn sample_kline() -> Kline {
-        Kline {
-            symbol: "BTCUSDT".to_string(),
-            interval: Interval::new("1m"),
-            open_time: TimestampMs(0),
-            open: Price(100.0),
-            high: Price(110.0),
-            low: Price(95.0),
-            close: Price(105.0),
-            volume: Quantity(1.0),
-            close_time: TimestampMs(60_000),
-        }
-    }
-
-    #[test]
-    fn limit_buy_executes_when_price_below_low() {
-        let kline = sample_kline();
-        assert!(super::should_fill_limit(
-            &OrderSide::Buy,
-            Price(96.0),
-            &kline
-        ));
-        assert!(!super::should_fill_limit(
-            &OrderSide::Buy,
-            Price(90.0),
-            &kline
-        ));
-    }
-
-    #[test]
-    fn limit_sell_executes_when_price_above_high() {
-        let kline = sample_kline();
-        assert!(super::should_fill_limit(
-            &OrderSide::Sell,
-            Price(109.0),
-            &kline
-        ));
-        assert!(!super::should_fill_limit(
-            &OrderSide::Sell,
-            Price(120.0),
-            &kline
-        ));
-    }
-}
+impl crate::domain::traits::OrderBookSim for OrdersService {}
