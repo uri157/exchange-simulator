@@ -93,19 +93,18 @@ impl DuckDbAggTradesStore {
 
         let pool = self.pool.clone();
         pool.with_conn_async(move |conn| {
-            let tx = conn
-                .transaction()
+            // Manejo de transacción sin &mut Connection: BEGIN/COMMIT manuales
+            conn.execute("BEGIN", [])
                 .map_err(|err| AppError::Database(format!("begin agg trades tx: {err}")))?;
-            {
-                let mut stmt = tx
+
+            let result: Result<usize, AppError> = (|| {
+                let mut stmt = conn
                     .prepare(
                         "INSERT INTO agg_trades (
                             symbol, event_time, trade_id, price, qty, quote_qty, is_buyer_maker
                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                     )
-                    .map_err(|err| {
-                        AppError::Database(format!("prepare insert agg trades: {err}"))
-                    })?;
+                    .map_err(|err| AppError::Database(format!("prepare insert agg trades: {err}")))?;
                 for trade in &records {
                     stmt.execute(params![
                         &trade.symbol,
@@ -118,10 +117,20 @@ impl DuckDbAggTradesStore {
                     ])
                     .map_err(|err| AppError::Database(format!("insert agg trade failed: {err}")))?;
                 }
+                Ok(records.len())
+            })();
+
+            match result {
+                Ok(n) => {
+                    conn.execute("COMMIT", [])
+                        .map_err(|err| AppError::Database(format!("commit agg trades tx: {err}")))?;
+                    Ok(n)
+                }
+                Err(e) => {
+                    let _ = conn.execute("ROLLBACK", []);
+                    Err(e)
+                }
             }
-            tx.commit()
-                .map_err(|err| AppError::Database(format!("commit agg trades tx: {err}")))?;
-            Ok(records.len())
         })
         .await
     }
