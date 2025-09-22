@@ -1,3 +1,4 @@
+// src/app/bootstrap.rs
 use std::{sync::Arc, time::Duration};
 
 use axum::{
@@ -51,6 +52,7 @@ pub struct AppState {
 /// Devuelve `Router<()>` con `Extension(AppState)` ya añadida.
 /// Así `main` puede usar `.into_make_service()` sin problemas.
 pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
+    info!(market_mode = ?config.default_market_mode, "booting app in market mode");
     info!(duckdb_path = %config.duckdb_path, "opening DuckDB");
     let pool = DuckDbPool::new(&config.duckdb_path)?;
 

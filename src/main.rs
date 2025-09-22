@@ -1,3 +1,4 @@
+// src/main.rs
 use std::net::SocketAddr;
 use tracing_subscriber::{fmt, EnvFilter};
 
@@ -20,13 +21,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // config y router
     let config = AppConfig::from_env()?;
+    tracing::info!(
+        market_mode = ?config.default_market_mode,
+        port = config.port,
+        "config loaded"
+    );
+
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     let app = build_app(config)?; // -> Router<()> con Extension(AppState) ya aplicada
 
     // axum 0.6 + hyper 0.14
     tracing::info!(%addr, "starting exchange simulator server");
     axum::Server::bind(&addr)
-        .serve(app.into_make_service()) // <- ahora compila
+        .serve(app.into_make_service())
         .await?;
 
     Ok(())
