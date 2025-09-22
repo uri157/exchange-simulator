@@ -107,6 +107,7 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
 
     let replay_service = Arc::new(ReplayService::new(
         market_store.clone(),
+        agg_trades_store.clone(),
         clock_trait.clone(),
         sessions_repo.clone(),
         broadcaster.clone(),
