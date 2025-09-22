@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use rand::{rngs::StdRng, Rng, SeedableRng};
+use tracing::info;
 use uuid::Uuid;
 
 use super::ServiceResult;
@@ -11,7 +12,7 @@ use crate::{
         value_objects::{Interval, TimestampMs},
     },
     error::AppError,
-    infra::duckdb::agg_trades_repo::DuckDbAggTradesStore,
+    infra::{binance::BinanceClient, duckdb::agg_trades_repo::DuckDbAggTradesStore},
 };
 
 #[derive(Clone)]
@@ -19,6 +20,19 @@ pub struct IngestService {
     ingestor: Arc<dyn MarketIngestor>,
     market_store: Arc<dyn MarketStore>,
     agg_trades_store: Arc<DuckDbAggTradesStore>,
+    binance_client: Arc<BinanceClient>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct IngestAggTradesResult {
+    pub symbol: String,
+    pub fetched: usize,
+    pub inserted: usize,
+    pub skipped: usize,
+    pub from_id_start: Option<i64>,
+    pub from_id_end: Option<i64>,
+    pub t_first: Option<i64>,
+    pub t_last: Option<i64>,
 }
 
 impl IngestService {
@@ -26,11 +40,13 @@ impl IngestService {
         ingestor: Arc<dyn MarketIngestor>,
         market_store: Arc<dyn MarketStore>,
         agg_trades_store: Arc<DuckDbAggTradesStore>,
+        binance_client: Arc<BinanceClient>,
     ) -> Self {
         Self {
             ingestor,
             market_store,
             agg_trades_store,
+            binance_client,
         }
     }
 
@@ -64,6 +80,163 @@ impl IngestService {
 
     pub async fn get_range(&self, symbol: &str, interval: &str) -> ServiceResult<(i64, i64)> {
         self.ingestor.get_range(symbol, interval).await
+    }
+
+    pub async fn ingest_agg_trades(
+        &self,
+        symbol: String,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+        clear_before: bool,
+    ) -> Result<IngestAggTradesResult, AppError> {
+        let symbol_clean = symbol.trim().to_uppercase();
+        if symbol_clean.is_empty() {
+            return Err(AppError::Validation("symbol cannot be empty".into()));
+        }
+
+        if let (Some(start), Some(end)) = (start_time, end_time) {
+            if start > end {
+                return Err(AppError::Validation(
+                    "start_time cannot be greater than end_time".into(),
+                ));
+            }
+        }
+
+        if clear_before && (start_time.is_none() || end_time.is_none()) {
+            return Err(AppError::Validation(
+                "clear_before requires start_time and end_time".into(),
+            ));
+        }
+
+        let mut result = IngestAggTradesResult {
+            symbol: symbol_clean.clone(),
+            ..Default::default()
+        };
+
+        if clear_before {
+            if let (Some(start), Some(end)) = (start_time, end_time) {
+                let removed = self
+                    .agg_trades_store
+                    .clear_range(&symbol_clean, TimestampMs(start), TimestampMs(end))
+                    .await?;
+                info!(
+                    symbol = %symbol_clean,
+                    removed,
+                    start_time = start,
+                    end_time = end,
+                    "cleared agg trades range before ingestion"
+                );
+            }
+        }
+
+        let existing_max = self.agg_trades_store.max_trade_id(&symbol_clean).await?;
+
+        let mut dedupe_cutoff = if clear_before { None } else { existing_max };
+        let mut from_id_cursor = if clear_before {
+            None
+        } else {
+            existing_max.map(|id| id + 1)
+        };
+        let mut start_time_cursor = if from_id_cursor.is_some() {
+            None
+        } else {
+            start_time
+        };
+
+        if from_id_cursor.is_none() && start_time_cursor.is_none() {
+            return Err(AppError::Validation(
+                "start_time is required when there are no existing trades".into(),
+            ));
+        }
+
+        let mut total_fetched = 0usize;
+        let mut total_inserted = 0usize;
+        let mut total_skipped = 0usize;
+        let mut reached_end = false;
+
+        while !reached_end {
+            let page = self
+                .binance_client
+                .get_agg_trades(
+                    &symbol_clean,
+                    start_time_cursor,
+                    end_time,
+                    from_id_cursor,
+                    Some(1000),
+                )
+                .await?;
+
+            if page.is_empty() {
+                break;
+            }
+
+            let page_len = page.len();
+            total_fetched += page_len;
+
+            let last_remote_id = page.last().map(|t| t.a);
+            let last_remote_time = page.last().map(|t| t.T);
+
+            let mut normalized = Vec::with_capacity(page_len);
+            for trade in page.iter() {
+                if let Some(end) = end_time {
+                    if trade.T > end {
+                        reached_end = true;
+                        break;
+                    }
+                }
+
+                if let Some(cutoff) = dedupe_cutoff {
+                    if trade.a <= cutoff {
+                        continue;
+                    }
+                }
+
+                normalized.push(AggTrade {
+                    symbol: symbol_clean.clone(),
+                    event_time: TimestampMs(trade.T),
+                    trade_id: trade.a,
+                    price: trade.p,
+                    qty: trade.q,
+                    quote_qty: trade.Q,
+                    is_buyer_maker: trade.m,
+                });
+
+                if result.from_id_start.is_none() {
+                    result.from_id_start = Some(trade.a);
+                    result.t_first = Some(trade.T);
+                }
+                result.from_id_end = Some(trade.a);
+                result.t_last = Some(trade.T);
+
+                dedupe_cutoff = Some(trade.a);
+            }
+
+            let inserted_now = self.agg_trades_store.insert_trades(&normalized).await?;
+            total_inserted += inserted_now;
+            total_skipped += page_len.saturating_sub(inserted_now);
+
+            if let (Some(last_id), Some(last_time)) = (last_remote_id, last_remote_time) {
+                info!(
+                    symbol = %symbol_clean,
+                    fetched = page_len,
+                    last_trade_id = last_id,
+                    last_trade_time = last_time,
+                    "fetched aggTrades page"
+                );
+                from_id_cursor = Some(last_id + 1);
+                start_time_cursor = None;
+            }
+
+            if reached_end {
+                break;
+            }
+        }
+
+        result.fetched = total_fetched;
+        result.inserted = total_inserted;
+        result.skipped = total_skipped;
+
+        Ok(result)
     }
 
     pub async fn seed_aggtrades_from_klines(

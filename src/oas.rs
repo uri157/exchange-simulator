@@ -16,6 +16,7 @@ use crate::dto;
         crate::api::v1::datasets::get_ready_symbols,         // GET /api/v1/datasets/symbols
         crate::api::v1::datasets::get_ready_intervals,       // GET /api/v1/datasets/:symbol/intervals
         crate::api::v1::datasets::get_symbol_interval_range, // GET /api/v1/datasets/:symbol/:interval/range
+        crate::api::v1::ingest::ingest_agg_trades,           // POST /api/v1/ingest/aggtrades
         // Sessions
         crate::api::v1::sessions::create_session,
         crate::api::v1::sessions::list_sessions,
@@ -67,6 +68,8 @@ use crate::dto;
             dto::account::BalanceResponse,
             dto::account::AccountQuery,
             dto::ws::WsQuery,
+            crate::api::v1::ingest::IngestAggTradesRequest,
+            crate::api::v1::ingest::IngestAggTradesResponse,
             // Domain types referenciados por DTOs
             crate::domain::models::OrderStatus,
             crate::domain::models::OrderSide,
@@ -84,6 +87,7 @@ use crate::dto;
     tags(
         (name = "market", description = "Market data endpoints (local DuckDB y compat Binance)"),
         (name = "datasets", description = "Dataset ingestion & local dataset queries"),
+        (name = "ingest", description = "On-demand ingestion utilities"),
         (name = "sessions", description = "Replay sessions"),
         (name = "orders", description = "Orders"),
         (name = "account", description = "Accounts"),

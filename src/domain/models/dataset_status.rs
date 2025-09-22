@@ -35,7 +35,9 @@ impl FromStr for DatasetStatus {
             "ingesting" => Ok(DatasetStatus::Ingesting),
             "ready" => Ok(DatasetStatus::Ready),
             "failed" => Ok(DatasetStatus::Failed),
-            other => Err(AppError::Validation(format!("invalid dataset status: {other}"))),
+            other => Err(AppError::Validation(format!(
+                "invalid dataset status: {other}"
+            ))),
         }
     }
 }

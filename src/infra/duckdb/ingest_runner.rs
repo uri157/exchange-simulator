@@ -75,8 +75,7 @@ pub async fn run_ingest(pool: &DuckDbPool, meta: &DatasetMetadata) -> Result<boo
         let (last_close, inserted_count) = pool
             .with_conn_async(move |conn| {
                 ingest_sql::insert_symbols_if_needed(conn, &sym)?;
-                let (last, affected) =
-                    ingest_sql::insert_klines_chunk(conn, &sym, &intv, &chunk)?;
+                let (last, affected) = ingest_sql::insert_klines_chunk(conn, &sym, &intv, &chunk)?;
                 Ok::<(i64, i64), AppError>((last, affected))
             })
             .await?;

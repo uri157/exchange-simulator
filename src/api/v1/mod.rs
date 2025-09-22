@@ -4,6 +4,7 @@ pub mod account;
 pub mod datasets;
 pub mod debug;
 pub mod dev;
+pub mod ingest;
 pub mod market;
 pub mod market_binance;
 pub mod orders;
@@ -15,6 +16,7 @@ pub fn router() -> Router {
         .merge(market::router())
         .merge(market_binance::router())
         .merge(datasets::router())
+        .merge(ingest::router())
         .merge(sessions::router())
         .merge(orders::router())
         .merge(account::router())

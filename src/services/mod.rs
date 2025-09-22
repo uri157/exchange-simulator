@@ -11,4 +11,4 @@ pub mod replay_service;
 pub mod sessions_service;
 
 // Re-export para imports simples: `use crate::services::IngestService;`
-pub use ingest_service::IngestService;
+pub use ingest_service::{IngestAggTradesResult, IngestService};

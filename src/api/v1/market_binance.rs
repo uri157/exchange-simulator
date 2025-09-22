@@ -1,8 +1,4 @@
-use axum::{
-    extract::Query,
-    routing::get,
-    Json, Router,
-};
+use axum::{extract::Query, routing::get, Json, Router};
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
@@ -47,12 +43,16 @@ pub struct RangeParams {
 #[instrument(skip_all)]
 pub async fn symbols() -> ApiResult<Json<Vec<SymbolInfo>>> {
     #[derive(Deserialize)]
-    struct ExchangeInfo { symbols: Vec<BSymbol> }
+    struct ExchangeInfo {
+        symbols: Vec<BSymbol>,
+    }
     #[derive(Deserialize)]
     struct BSymbol {
         symbol: String,
-        #[serde(rename = "baseAsset")] base_asset: String,
-        #[serde(rename = "quoteAsset")] quote_asset: String,
+        #[serde(rename = "baseAsset")]
+        base_asset: String,
+        #[serde(rename = "quoteAsset")]
+        quote_asset: String,
         status: String,
         #[serde(rename = "isSpotTradingAllowed", default)]
         is_spot_trading_allowed: Option<bool>,
@@ -62,11 +62,17 @@ pub async fn symbols() -> ApiResult<Json<Vec<SymbolInfo>>> {
         .get("https://api.binance.com/api/v3/exchangeInfo")
         .send()
         .await
-        .map_err(|e| crate::error::AppError::External(format!("exchangeInfo request failed: {e}")))?;
-    let info: ExchangeInfo = resp.json().await
+        .map_err(|e| {
+            crate::error::AppError::External(format!("exchangeInfo request failed: {e}"))
+        })?;
+    let info: ExchangeInfo = resp
+        .json()
+        .await
         .map_err(|e| crate::error::AppError::External(format!("exchangeInfo parse failed: {e}")))?;
 
-    let out = info.symbols.into_iter()
+    let out = info
+        .symbols
+        .into_iter()
         .filter(|s| s.status == "TRADING" && s.is_spot_trading_allowed.unwrap_or(true))
         .map(|s| SymbolInfo {
             symbol: s.symbol,
@@ -87,7 +93,7 @@ pub async fn symbols() -> ApiResult<Json<Vec<SymbolInfo>>> {
 #[instrument(skip_all)]
 pub async fn intervals() -> ApiResult<Json<Vec<&'static str>>> {
     Ok(Json(vec![
-        "1m","3m","5m","15m","30m","1h","2h","4h","6h","8h","12h","1d","3d","1w","1M",
+        "1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M",
     ]))
 }
 
@@ -133,8 +139,16 @@ pub async fn range(Query(q): Query<RangeParams>) -> ApiResult<Json<AvailableRang
         .await
         .map_err(|e| crate::error::AppError::External(format!("klines last parse failed: {e}")))?;
 
-    let first_open = first.get(0).and_then(|r| r.get(0)).and_then(|v| v.as_i64()).unwrap_or(0);
-    let last_close = last.get(0).and_then(|r| r.get(6)).and_then(|v| v.as_i64()).unwrap_or(now);
+    let first_open = first
+        .get(0)
+        .and_then(|r| r.get(0))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    let last_close = last
+        .get(0)
+        .and_then(|r| r.get(6))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(now);
 
     Ok(Json(AvailableRange {
         symbol: q.symbol,
