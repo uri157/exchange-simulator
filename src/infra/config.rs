@@ -24,6 +24,10 @@ pub struct AppConfig {
     pub ws_buffer: usize,
     pub max_session_clients: usize,
     pub fees: FeeConfig,
+    pub binance_base_url: String,
+    pub binance_http_timeout_ms: u64,
+    pub binance_retry_max: u32,
+    pub binance_retry_base_ms: u64,
 }
 
 impl AppConfig {
@@ -76,6 +80,23 @@ impl AppConfig {
             .parse()
             .map_err(|err| AppError::Validation(format!("invalid FEES_PARTIAL_FILLS: {err}")))?;
 
+        let binance_base_url =
+            env::var("BINANCE_BASE_URL").unwrap_or_else(|_| "https://api.binance.com".to_string());
+        let binance_http_timeout_ms: u64 = env::var("BINANCE_HTTP_TIMEOUT_MS")
+            .unwrap_or_else(|_| "15000".to_string())
+            .parse()
+            .map_err(|err| {
+                AppError::Validation(format!("invalid BINANCE_HTTP_TIMEOUT_MS: {err}"))
+            })?;
+        let binance_retry_max: u32 = env::var("BINANCE_RETRY_MAX")
+            .unwrap_or_else(|_| "5".to_string())
+            .parse()
+            .map_err(|err| AppError::Validation(format!("invalid BINANCE_RETRY_MAX: {err}")))?;
+        let binance_retry_base_ms: u64 = env::var("BINANCE_RETRY_BASE_MS")
+            .unwrap_or_else(|_| "300".to_string())
+            .parse()
+            .map_err(|err| AppError::Validation(format!("invalid BINANCE_RETRY_BASE_MS: {err}")))?;
+
         Ok(Self {
             port,
             duckdb_path,
@@ -89,6 +110,10 @@ impl AppConfig {
                 taker_bps,
                 partial_fills,
             },
+            binance_base_url,
+            binance_http_timeout_ms,
+            binance_retry_max,
+            binance_retry_base_ms,
         })
     }
 }

@@ -104,7 +104,9 @@ impl DuckDbAggTradesStore {
                             symbol, event_time, trade_id, price, qty, quote_qty, is_buyer_maker
                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                     )
-                    .map_err(|err| AppError::Database(format!("prepare insert agg trades: {err}")))?;
+                    .map_err(|err| {
+                        AppError::Database(format!("prepare insert agg trades: {err}"))
+                    })?;
                 for trade in &records {
                     stmt.execute(params![
                         &trade.symbol,
@@ -122,8 +124,9 @@ impl DuckDbAggTradesStore {
 
             match result {
                 Ok(n) => {
-                    conn.execute("COMMIT", [])
-                        .map_err(|err| AppError::Database(format!("commit agg trades tx: {err}")))?;
+                    conn.execute("COMMIT", []).map_err(|err| {
+                        AppError::Database(format!("commit agg trades tx: {err}"))
+                    })?;
                     Ok(n)
                 }
                 Err(e) => {

@@ -16,6 +16,7 @@ use crate::{
         AccountsRepo, AggTradesStore, MarketIngestor, MarketStore, OrdersRepo, SessionsRepo,
     },
     infra::{
+        binance::BinanceClient,
         clock::SimulatedClock,
         config::AppConfig,
         duckdb::{
@@ -90,12 +91,14 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
     let agg_trades_store_impl = Arc::new(DuckDbAggTradesStore::new(pool.clone()));
     let agg_trades_store: Arc<dyn AggTradesStore> = agg_trades_store_impl.clone();
     let market_service = Arc::new(MarketService::new(market_store.clone()));
+    let binance_client = Arc::new(BinanceClient::new_from_config(&config));
 
     let ingestor: Arc<dyn MarketIngestor> = Arc::new(DuckDbIngestRepo::new(pool.clone()));
     let ingest_service = Arc::new(IngestService::new(
         ingestor.clone(),
         market_store_impl.clone(),
         agg_trades_store_impl.clone(),
+        binance_client.clone(),
     ));
 
     let sessions_repo: Arc<dyn SessionsRepo> = Arc::new(DuckDbSessionsRepo::new(pool.clone())?);

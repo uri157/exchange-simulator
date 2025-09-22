@@ -1,10 +1,14 @@
+pub mod client;
+
+pub use client::{BinanceAggTrade, BinanceClient};
+
 use chrono::Utc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::error::AppError;
 
-fn client() -> Client {
+fn http_client() -> Client {
     Client::builder()
         .user_agent("exchange-simulator/binance-infra")
         .build()
@@ -48,7 +52,7 @@ pub struct AvailableRange {
 
 /// Devuelve la lista de símbolos spot activos desde Binance.
 pub async fn fetch_symbols() -> Result<Vec<SymbolInfo>, AppError> {
-    let resp = client()
+    let resp = http_client()
         .get("https://api.binance.com/api/v3/exchangeInfo")
         .send()
         .await
@@ -75,13 +79,16 @@ pub async fn fetch_symbols() -> Result<Vec<SymbolInfo>, AppError> {
 }
 
 /// Obtiene el primer open_time y el último close_time disponible para `symbol`/`interval`.
-pub async fn fetch_available_range(symbol: &str, interval: &str) -> Result<AvailableRange, AppError> {
+pub async fn fetch_available_range(
+    symbol: &str,
+    interval: &str,
+) -> Result<AvailableRange, AppError> {
     let base = "https://api.binance.com/api/v3/klines";
     let now = Utc::now().timestamp_millis();
 
     // Primera vela (startTime=0, limit=1)
     let url_first = format!("{base}?symbol={symbol}&interval={interval}&startTime=0&limit=1");
-    let first: Vec<Vec<serde_json::Value>> = client()
+    let first: Vec<Vec<serde_json::Value>> = http_client()
         .get(&url_first)
         .send()
         .await
@@ -92,7 +99,7 @@ pub async fn fetch_available_range(symbol: &str, interval: &str) -> Result<Avail
 
     // Última vela (endTime=now, limit=1)
     let url_last = format!("{base}?symbol={symbol}&interval={interval}&endTime={now}&limit=1");
-    let last: Vec<Vec<serde_json::Value>> = client()
+    let last: Vec<Vec<serde_json::Value>> = http_client()
         .get(&url_last)
         .send()
         .await

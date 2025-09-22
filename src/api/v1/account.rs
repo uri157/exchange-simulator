@@ -1,4 +1,4 @@
-use axum::{Extension, Json, Router, extract::Query, routing::get};
+use axum::{extract::Query, routing::get, Extension, Json, Router};
 use tracing::instrument;
 
 use crate::{
