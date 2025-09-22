@@ -83,7 +83,7 @@ async fn handle_socket(state: AppState, query: WsQuery, mut socket: WebSocket) {
         }
     };
 
-    debug!(session_id = %session_id, "websocket connected");
+    info!(session_id = %session_id, "websocket connected; no state changes triggered");
 
     let mut ping_interval = interval(Duration::from_secs(30));
     ping_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -132,7 +132,11 @@ async fn handle_socket(state: AppState, query: WsQuery, mut socket: WebSocket) {
                     }
                     Err(RecvError::Lagged(skipped)) => {
                         // No cerramos: informamos y seguimos desde el último mensaje disponible.
-                        warn!(session_id = %session_id, skipped = skipped, "broadcast lagged; dropping to latest and continuing");
+                        warn!(
+                            session_id = %session_id,
+                            skipped = skipped,
+                            "broadcast lagged; dropping to latest and continuing"
+                        );
                         let payload = json!({
                             "event": "warning",
                             "data": { "type": "lagged", "skipped": skipped }
@@ -141,13 +145,17 @@ async fn handle_socket(state: AppState, query: WsQuery, mut socket: WebSocket) {
                         continue;
                     }
                     Err(RecvError::Closed) => {
-                        debug!(session_id = %session_id, "broadcast channel closed, terminating websocket");
                         let reason = match state.sessions_service.get_session(session_id).await {
                             Ok(session) if !session.enabled => Cow::from("session disabled"),
                             Ok(_) => Cow::from("session closed"),
                             Err(AppError::NotFound(_)) => Cow::from("session deleted"),
                             Err(_) => Cow::from("session closed"),
                         };
+                        info!(
+                            session_id = %session_id,
+                            reason = reason.as_ref(),
+                            "broadcast channel closed; terminating websocket"
+                        );
                         let _ = socket
                             .send(Message::Close(Some(CloseFrame {
                                 code: 1000,
@@ -180,5 +188,5 @@ async fn handle_socket(state: AppState, query: WsQuery, mut socket: WebSocket) {
         }
     }
 
-    debug!(session_id = %session_id, "websocket disconnected");
+    info!(session_id = %session_id, "websocket disconnected");
 }
