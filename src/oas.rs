@@ -27,14 +27,14 @@ use crate::dto;
         crate::api::v1::sessions::enable_session,
         crate::api::v1::sessions::disable_session,
         crate::api::v1::sessions::delete_session,
-        // Orders
-        crate::api::v1::orders::new_order,
-        crate::api::v1::orders::get_order,
-        crate::api::v1::orders::cancel_order,
-        crate::api::v1::orders::open_orders,
-        crate::api::v1::orders::my_trades,
+        // Orders (compat)
+        crate::api::v3::orders::new_order,
+        crate::api::v3::orders::get_order,
+        crate::api::v3::orders::cancel_order,
+        crate::api::v3::orders::open_orders,
+        crate::api::v3::orders::my_trades,
         // Account
-        crate::api::v1::account::get_account,
+        crate::api::v3::account::get_account,
         // Binance proxy (opcional)
         crate::api::v1::market_binance::symbols,
         crate::api::v1::market_binance::intervals,
