@@ -19,6 +19,7 @@ use crate::{
         repos::{
             duckdb::DuckDbSessionsRepo,
             memory::{MemoryAccountsRepo, MemoryOrdersRepo},
+            orders_repo::OrderIdMapping,
         },
         ws::broadcaster::SessionBroadcaster,
     },
@@ -40,6 +41,7 @@ pub struct AppState {
     pub replay_service: Arc<ReplayService>,
     pub broadcaster: SessionBroadcaster,
     pub duck_pool: DuckDbPool,
+    pub order_id_mapping: Arc<OrderIdMapping>,
 }
 
 /// Devuelve `Router<()>` con `Extension(AppState)` ya añadida.
@@ -85,6 +87,7 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
 
     let sessions_repo: Arc<dyn SessionsRepo> = Arc::new(DuckDbSessionsRepo::new(pool.clone())?);
     let orders_repo: Arc<dyn OrdersRepo> = Arc::new(MemoryOrdersRepo::new());
+    let order_id_mapping = Arc::new(OrderIdMapping::new());
     let accounts_repo: Arc<dyn AccountsRepo> = Arc::new(MemoryAccountsRepo::new());
 
     let clock = Arc::new(SimulatedClock::new(config.default_speed));
@@ -130,6 +133,7 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
         replay_service,
         broadcaster,
         duck_pool: pool.clone(),
+        order_id_mapping: order_id_mapping.clone(),
     };
 
     let trace_layer = TraceLayer::new_for_http()
@@ -156,8 +160,8 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
                 "request_finished"
             );
         })
-        .on_failure(|failure: ServerErrorsFailureClass, latency: Duration, span: &Span| {
-            match failure {
+        .on_failure(
+            |failure: ServerErrorsFailureClass, latency: Duration, span: &Span| match failure {
                 ServerErrorsFailureClass::StatusCode(status) => {
                     span.record("status", &tracing::field::display(status));
                     tracing::error!(
@@ -176,8 +180,8 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
                         "request_failed"
                     );
                 }
-            }
-        });
+            },
+        );
 
     Ok(create_router().layer(trace_layer).layer(Extension(state)))
 }

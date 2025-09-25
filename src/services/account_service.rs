@@ -51,6 +51,10 @@ impl AccountService {
         self.repo.get_account(session_id).await
     }
 
+    pub fn default_quote_asset(&self) -> &str {
+        &self.default_quote
+    }
+
     pub async fn apply_fill(
         &self,
         session_id: Uuid,
