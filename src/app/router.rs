@@ -17,6 +17,7 @@ pub fn create_router() -> Router {
         )
         .route("/ping", get(crate::api::errors::ping))
         .merge(api::v1::router())
+        .merge(api::v3::router())
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
 }
