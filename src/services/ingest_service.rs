@@ -2,7 +2,10 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use super::ServiceResult;
-use crate::domain::{models::DatasetMetadata, traits::MarketIngestor};
+use crate::{
+    domain::{models::DatasetMetadata, traits::MarketIngestor},
+    error::AppError,
+};
 
 #[derive(Clone)]
 pub struct IngestService {
@@ -32,6 +35,29 @@ impl IngestService {
 
     pub async fn ingest_dataset(&self, dataset_id: Uuid) -> ServiceResult<()> {
         self.ingestor.ingest_dataset(dataset_id).await
+    }
+
+    pub async fn get_dataset(&self, dataset_id: Uuid) -> ServiceResult<DatasetMetadata> {
+        self.ingestor
+            .get_dataset(dataset_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("dataset {dataset_id} not found")))
+    }
+
+    pub async fn delete_dataset(&self, dataset_id: Uuid, force: bool) -> ServiceResult<()> {
+        let dataset = self
+            .ingestor
+            .get_dataset(dataset_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("dataset {dataset_id} not found")))?;
+
+        if dataset.status == "ingesting" && !force {
+            return Err(AppError::Conflict(
+                "dataset is currently ingesting; retry with force=true".to_string(),
+            ));
+        }
+
+        self.ingestor.delete_dataset(dataset_id).await
     }
 
     pub async fn list_ready_symbols(&self) -> ServiceResult<Vec<String>> {

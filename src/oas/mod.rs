@@ -17,6 +17,8 @@ use crate::dto;
         crate::api::v1::datasets::register_dataset,
         crate::api::v1::datasets::list_datasets,
         crate::api::v1::datasets::ingest_dataset,
+        crate::api::v1::datasets::get_dataset,
+        crate::api::v1::datasets::delete_dataset,
         crate::api::v1::datasets::get_ready_symbols,         // GET /api/v1/datasets/symbols
         crate::api::v1::datasets::get_ready_intervals,       // GET /api/v1/datasets/:symbol/intervals
         crate::api::v1::datasets::get_symbol_interval_range, // GET /api/v1/datasets/:symbol/:interval/range

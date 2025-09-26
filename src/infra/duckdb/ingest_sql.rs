@@ -227,6 +227,79 @@ pub fn list_datasets_query(conn: &Connection) -> Result<Vec<DatasetMetadata>, Ap
     Ok(out)
 }
 
+pub fn get_dataset_by_id(
+    conn: &Connection,
+    dataset_id: Uuid,
+) -> Result<Option<DatasetMetadata>, AppError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, symbol, interval, start_time, end_time, status, created_at
+               FROM datasets
+              WHERE id = ?1",
+        )
+        .map_err(|e| AppError::Database(format!("prepare dataset get failed: {e}")))?;
+
+    let mut rows = stmt
+        .query(params![dataset_id.to_string()])
+        .map_err(|e| AppError::Database(format!("query dataset get failed: {e}")))?;
+
+    if let Some(row) = rows
+        .next()
+        .map_err(|e| AppError::Database(format!("row iteration failed: {e}")))?
+    {
+        let id_str: String = row
+            .get(0)
+            .map_err(|e| AppError::Database(format!("column error: {e}")))?;
+        let id = Uuid::parse_str(&id_str)
+            .map_err(|e| AppError::Database(format!("uuid parse error: {e}")))?;
+
+        Ok(Some(DatasetMetadata {
+            id,
+            symbol: row
+                .get::<_, String>(1)
+                .map_err(|e| AppError::Database(format!("column error: {e}")))?,
+            interval: row
+                .get::<_, String>(2)
+                .map_err(|e| AppError::Database(format!("column error: {e}")))?,
+            start_time: row
+                .get::<_, i64>(3)
+                .map_err(|e| AppError::Database(format!("column error: {e}")))?,
+            end_time: row
+                .get::<_, i64>(4)
+                .map_err(|e| AppError::Database(format!("column error: {e}")))?,
+            status: row
+                .get::<_, String>(5)
+                .map_err(|e| AppError::Database(format!("column error: {e}")))?,
+            created_at: row
+                .get::<_, i64>(6)
+                .map_err(|e| AppError::Database(format!("column error: {e}")))?,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn delete_dataset(conn: &Connection, dataset_id: Uuid) -> Result<(), AppError> {
+    let affected = conn
+        .execute(
+            "DELETE FROM datasets WHERE id = ?1",
+            params![dataset_id.to_string()],
+        )
+        .map_err(|e| AppError::Database(format!("delete dataset failed: {e}")))?;
+
+    if affected == 0 {
+        return Ok(());
+    }
+
+    conn.execute(
+        "DELETE FROM dataset_progress WHERE dataset_id = ?1",
+        params![dataset_id.to_string()],
+    )
+    .map_err(|e| AppError::Database(format!("delete dataset progress failed: {e}")))?;
+
+    Ok(())
+}
+
 // =========================
 // Progreso de ingesta (UI)
 // =========================

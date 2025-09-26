@@ -149,6 +149,22 @@ impl MarketIngestor for TestIngestRepo {
         Ok(())
     }
 
+    async fn get_dataset(&self, dataset_id: Uuid) -> Result<Option<DatasetMetadata>, AppError> {
+        let guard = self.datasets.lock().unwrap();
+        Ok(guard.get(&dataset_id).cloned())
+    }
+
+    async fn delete_dataset(&self, dataset_id: Uuid) -> Result<(), AppError> {
+        {
+            let mut guard = self.datasets.lock().unwrap();
+            guard.remove(&dataset_id);
+        }
+
+        let pool = self.pool.clone();
+        pool.with_conn_async(move |conn| ingest_sql::delete_dataset(conn, dataset_id))
+            .await
+    }
+
     async fn list_ready_symbols(&self) -> Result<Vec<String>, AppError> {
         let guard = self.datasets.lock().unwrap();
         let symbols: HashSet<String> = guard
