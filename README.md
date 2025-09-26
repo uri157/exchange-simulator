@@ -1,12 +1,3 @@
-Perfect—based on your audit, here’s a **corrected, human-oriented README** that fixes the two issues:
-
-* Sessions are **persisted in DuckDB** (only orders & accounts are in-memory).
-* The WS kline payload is **custom (event/data/stream)**, i.e., **inspired by** Binance, not byte-compatible.
-
-You can replace your current README with this.
-
----
-
 # Exchange Simulator (Rust)
 
 A fast, deterministic **Binance-like simulator** to backtest and replay strategies over historical data—so your bot can talk to it almost like it were Binance.
