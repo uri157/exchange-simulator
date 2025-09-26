@@ -2,14 +2,30 @@ use reqwest::Client;
 use serde_json::Value;
 use tracing::info;
 
-use crate::{domain::models::DatasetMetadata, error::AppError};
+use crate::{
+    domain::models::DatasetMetadata,
+    error::AppError,
+    infra::ingest::progress_sink::ProgressSink,
+};
 
 use super::{db::DuckDbPool, ingest_sql};
 
+/// Resultado de la ejecución de ingesta.
+pub enum IngestOutcome {
+    Completed { inserted_any: bool },
+    Canceled,
+}
+
 /// Ejecuta el proceso de descarga desde Binance y almacenamiento en DuckDB.
 /// Además, registra progreso en `dataset_progress`.
-/// Retorna `true` si se insertó al menos un kline.
-pub async fn run_ingest(pool: &DuckDbPool, meta: &DatasetMetadata) -> Result<bool, AppError> {
+pub async fn run_ingest<S>(
+    pool: &DuckDbPool,
+    meta: &DatasetMetadata,
+    sink: &S,
+) -> Result<IngestOutcome, AppError>
+where
+    S: ProgressSink + ?Sized,
+{
     let client = Client::builder()
         .user_agent("exchange-simulator/ingest-runner")
         .build()
@@ -24,7 +40,7 @@ pub async fn run_ingest(pool: &DuckDbPool, meta: &DatasetMetadata) -> Result<boo
         .ok_or_else(|| AppError::Validation(format!("unsupported interval '{}'", meta.interval)))?;
     let total_est = ((meta.end_time - meta.start_time).max(0) / interval_ms as i64).max(0);
 
-    // Inicializa progreso
+    // Inicializa progreso persistido
     {
         let pool2 = pool.clone();
         let meta_id = meta.id;
@@ -36,33 +52,48 @@ pub async fn run_ingest(pool: &DuckDbPool, meta: &DatasetMetadata) -> Result<boo
             .await?;
     }
 
+    sink.set_progress(0, Some("Starting ingestion".to_string()));
+    sink.append_log(format!(
+        "starting ingestion for {} {} ({} -> {})",
+        meta.symbol, meta.interval, meta.start_time, meta.end_time
+    ));
+
+    if sink.is_cancelled() {
+        sink.append_log("ingestion canceled before start".to_string());
+        return Ok(IngestOutcome::Canceled);
+    }
+
     let mut accumulated_inserted: i64 = 0;
     let mut last_logged_pct: i64 = -1;
 
     while from < meta.end_time {
+        if sink.is_cancelled() {
+            sink.append_log("ingestion canceled".to_string());
+            return Ok(IngestOutcome::Canceled);
+        }
+
         let url = format!(
             "{base}?symbol={}&interval={}&startTime={from}&endTime={}&limit=1000",
             meta.symbol, meta.interval, meta.end_time
         );
 
-        let resp = client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| AppError::External(format!("binance request failed: {e}")))?;
+        let resp = client.get(&url).send().await.map_err(|e| {
+            let msg = format!("binance request failed: {e}");
+            sink.append_log(msg.clone());
+            AppError::External(msg)
+        })?;
 
         if !resp.status().is_success() {
-            return Err(AppError::External(format!(
-                "binance status {} for {}",
-                resp.status(),
-                url
-            )));
+            let msg = format!("binance status {} for {}", resp.status(), url);
+            sink.append_log(msg.clone());
+            return Err(AppError::External(msg));
         }
 
-        let chunk: Vec<Vec<Value>> = resp
-            .json()
-            .await
-            .map_err(|e| AppError::External(format!("binance parse failed: {e}")))?;
+        let chunk: Vec<Vec<Value>> = resp.json().await.map_err(|e| {
+            let msg = format!("binance parse failed: {e}");
+            sink.append_log(msg.clone());
+            AppError::External(msg)
+        })?;
 
         if chunk.is_empty() {
             break;
@@ -75,8 +106,7 @@ pub async fn run_ingest(pool: &DuckDbPool, meta: &DatasetMetadata) -> Result<boo
         let (last_close, inserted_count) = pool
             .with_conn_async(move |conn| {
                 ingest_sql::insert_symbols_if_needed(conn, &sym)?;
-                let (last, affected) =
-                    ingest_sql::insert_klines_chunk(conn, &sym, &intv, &chunk)?;
+                let (last, affected) = ingest_sql::insert_klines_chunk(conn, &sym, &intv, &chunk)?;
                 Ok::<(i64, i64), AppError>((last, affected))
             })
             .await?;
@@ -86,7 +116,7 @@ pub async fn run_ingest(pool: &DuckDbPool, meta: &DatasetMetadata) -> Result<boo
         }
         accumulated_inserted += inserted_count;
 
-        // Actualiza progreso
+        // Actualiza progreso persistido
         {
             let pool2 = pool.clone();
             let dataset_id = meta.id;
@@ -104,22 +134,33 @@ pub async fn run_ingest(pool: &DuckDbPool, meta: &DatasetMetadata) -> Result<boo
                 .await?;
         }
 
-        // Logging de progreso (cada 5%)
+        let pct = if total_est > 0 {
+            ((accumulated_inserted * 100) / total_est).clamp(0, 100) as u8
+        } else {
+            0
+        };
+        let message = if total_est > 0 {
+            format!("Inserted {accumulated_inserted} of ~{total_est} rows")
+        } else {
+            format!("Inserted batch (+{inserted_count}) total={accumulated_inserted}")
+        };
+        sink.set_progress(pct, Some(message));
+
+        // Logging de progreso (cada 5%) para tracing
         if total_est > 0 {
-            let pct = ((accumulated_inserted * 100) / total_est).clamp(0, 100);
-            if pct >= last_logged_pct + 5 {
+            let pct_i64 = pct as i64;
+            if pct_i64 >= last_logged_pct + 5 {
                 info!(
                     dataset_id = %meta.id,
                     symbol = %meta.symbol,
                     interval = %meta.interval,
                     inserted = accumulated_inserted,
                     total_est = total_est,
-                    "{pct}% approx ({accumulated_inserted}/{total_est})"
+                    "{pct_i64}% approx ({accumulated_inserted}/{total_est})"
                 );
-                last_logged_pct = pct;
+                last_logged_pct = pct_i64;
             }
         } else {
-            // Sin estimación útil, log por batch
             info!(
                 dataset_id = %meta.id,
                 symbol = %meta.symbol,
@@ -136,7 +177,15 @@ pub async fn run_ingest(pool: &DuckDbPool, meta: &DatasetMetadata) -> Result<boo
         from = last_close + 1;
     }
 
-    Ok(inserted_any)
+    if sink.is_cancelled() {
+        sink.append_log("ingestion canceled".to_string());
+        return Ok(IngestOutcome::Canceled);
+    }
+
+    sink.set_progress(100, Some("Ingestion finished".to_string()));
+    sink.append_log("ingestion finished".to_string());
+
+    Ok(IngestOutcome::Completed { inserted_any })
 }
 
 /// Mapea el string de intervalo de Binance a milisegundos

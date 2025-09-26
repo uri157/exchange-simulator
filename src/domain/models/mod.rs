@@ -4,6 +4,8 @@ use uuid::Uuid;
 
 pub mod dataset_status;
 
+use dataset_status::DatasetStatus;
+
 use crate::domain::value_objects::{Interval, Price, Quantity, Speed, TimestampMs};
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -127,8 +129,11 @@ pub struct DatasetMetadata {
     pub interval: String, // e.g. "1m","1h","1d"
     pub start_time: i64,  // epoch ms
     pub end_time: i64,    // epoch ms
-    pub status: String,   // "registered" | "ingesting" | "ready" | "failed"
-    pub created_at: i64,  // epoch ms
+    pub status: DatasetStatus,
+    pub progress: u8,
+    pub last_message: Option<String>,
+    pub created_at: i64, // epoch ms
+    pub updated_at: i64, // epoch ms
 }
 
 // (Opcional) Compat con ingestiones locales antiguas.

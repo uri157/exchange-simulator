@@ -2,7 +2,10 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 use super::ServiceResult;
-use crate::domain::{models::DatasetMetadata, traits::MarketIngestor};
+use crate::domain::{
+    models::{dataset_status::DatasetStatus, DatasetMetadata},
+    traits::MarketIngestor,
+};
 
 #[derive(Clone)]
 pub struct IngestService {
@@ -30,8 +33,26 @@ impl IngestService {
         self.ingestor.list_datasets().await
     }
 
+    pub async fn get_dataset(&self, dataset_id: Uuid) -> ServiceResult<DatasetMetadata> {
+        self.ingestor.get_dataset(dataset_id).await
+    }
+
     pub async fn ingest_dataset(&self, dataset_id: Uuid) -> ServiceResult<()> {
         self.ingestor.ingest_dataset(dataset_id).await
+    }
+
+    pub async fn delete_dataset(&self, dataset_id: Uuid) -> ServiceResult<()> {
+        self.ingestor.delete_dataset(dataset_id).await
+    }
+
+    pub async fn update_dataset_status(
+        &self,
+        dataset_id: Uuid,
+        status: DatasetStatus,
+    ) -> ServiceResult<()> {
+        self.ingestor
+            .update_dataset_status(dataset_id, status)
+            .await
     }
 
     pub async fn list_ready_symbols(&self) -> ServiceResult<Vec<String>> {

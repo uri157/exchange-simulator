@@ -16,6 +16,7 @@ use crate::{
         clock::SimulatedClock,
         config::AppConfig,
         duckdb::{db::DuckDbPool, ingest_repo::DuckDbIngestRepo, market_repo::DuckDbMarketStore},
+        progress::ingestion_registry::IngestionProgressRegistry,
         repos::{
             duckdb::DuckDbSessionsRepo,
             memory::{MemoryAccountsRepo, MemoryOrdersRepo},
@@ -42,6 +43,7 @@ pub struct AppState {
     pub broadcaster: SessionBroadcaster,
     pub duck_pool: DuckDbPool,
     pub order_id_mapping: OrderIdMapping,
+    pub ingestion_progress: IngestionProgressRegistry,
 }
 
 /// Devuelve `Router<()>` con `Extension(AppState)` ya añadida.
@@ -82,7 +84,11 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
     let market_store: Arc<dyn MarketStore> = Arc::new(DuckDbMarketStore::new(pool.clone()));
     let market_service = Arc::new(MarketService::new(market_store.clone()));
 
-    let ingestor: Arc<dyn MarketIngestor> = Arc::new(DuckDbIngestRepo::new(pool.clone()));
+    let ingestion_progress = IngestionProgressRegistry::new(100);
+    let ingestor: Arc<dyn MarketIngestor> = Arc::new(DuckDbIngestRepo::new(
+        pool.clone(),
+        ingestion_progress.clone(),
+    ));
     let ingest_service = Arc::new(IngestService::new(ingestor.clone()));
 
     let sessions_repo: Arc<dyn SessionsRepo> = Arc::new(DuckDbSessionsRepo::new(pool.clone())?);
@@ -133,6 +139,7 @@ pub fn build_app(config: AppConfig) -> Result<Router, crate::error::AppError> {
         broadcaster,
         duck_pool: pool.clone(),
         order_id_mapping: OrderIdMapping::new(),
+        ingestion_progress,
     };
 
     let trace_layer = TraceLayer::new_for_http()

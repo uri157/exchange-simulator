@@ -2,8 +2,13 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::{
-    domain::{models::DatasetMetadata, traits::MarketIngestor},
+    domain::{
+        models::{dataset_status::DatasetStatus, DatasetMetadata},
+        traits::MarketIngestor,
+    },
     error::AppError,
+    infra::ingest::progress_sink::ProgressSink,
+    infra::progress::ingestion_registry::IngestionProgressRegistry,
 };
 
 use super::{
@@ -15,11 +20,25 @@ use super::{
 #[derive(Clone)]
 pub struct DuckDbIngestRepo {
     pool: DuckDbPool,
+    progress: IngestionProgressRegistry,
 }
 
 impl DuckDbIngestRepo {
-    pub fn new(pool: DuckDbPool) -> Self {
-        Self { pool }
+    pub fn new(pool: DuckDbPool, progress: IngestionProgressRegistry) -> Self {
+        Self { pool, progress }
+    }
+
+    async fn persist_status(
+        &self,
+        dataset_id: Uuid,
+        status: DatasetStatus,
+    ) -> Result<(), AppError> {
+        let pool = self.pool.clone();
+        let status_str = status.as_storage_str().to_string();
+        pool.with_conn_async(move |conn| {
+            ingest_sql::mark_dataset_status(conn, dataset_id, &status_str)
+        })
+        .await
     }
 }
 
@@ -38,14 +57,18 @@ impl MarketIngestor for DuckDbIngestRepo {
             ));
         }
 
+        let now = Utc::now().timestamp_millis();
         let meta = DatasetMetadata {
             id: Uuid::new_v4(),
             symbol: symbol.to_string(),
             interval: interval.to_string(),
             start_time,
             end_time,
-            status: "registered".to_string(),
-            created_at: Utc::now().timestamp_millis(),
+            status: DatasetStatus::Registered,
+            progress: 0,
+            last_message: None,
+            created_at: now,
+            updated_at: now,
         };
 
         let meta_for_insert = meta.clone();
@@ -56,12 +79,21 @@ impl MarketIngestor for DuckDbIngestRepo {
         })
         .await?;
 
+        self.progress
+            .bootstrap(meta.id, DatasetStatus::Registered, now, None);
+
         Ok(meta)
     }
 
     async fn list_datasets(&self) -> Result<Vec<DatasetMetadata>, AppError> {
         let pool = self.pool.clone();
         pool.with_conn_async(|conn| ingest_sql::list_datasets_query(conn))
+            .await
+    }
+
+    async fn get_dataset(&self, dataset_id: Uuid) -> Result<DatasetMetadata, AppError> {
+        let pool = self.pool.clone();
+        pool.with_conn_async(move |conn| ingest_sql::get_dataset(conn, dataset_id))
             .await
     }
 
@@ -82,40 +114,84 @@ impl MarketIngestor for DuckDbIngestRepo {
             interval,
             start_time,
             end_time,
-            status: "ingesting".to_string(),
+            status: DatasetStatus::Ingesting,
+            progress: 0,
+            last_message: None,
             created_at: 0, // no se usa aquí
+            updated_at: 0,
         };
 
+        let progress_handle = self
+            .progress
+            .start_ingest(dataset_id, DatasetStatus::Registered);
+        progress_handle.set_status(
+            DatasetStatus::Ingesting,
+            Some("Ingestion started".to_string()),
+        );
+
         // 2) Marcar status = ingesting
-        {
-            let pool = self.pool.clone();
-            pool.with_conn_async({
-                let id = dataset_id;
-                move |conn| ingest_sql::mark_dataset_status(conn, id, "ingesting")
-            })
+        self.persist_status(dataset_id, DatasetStatus::Ingesting)
             .await?;
-        }
 
         // 3) Orquestar descarga + ingesta
-        let inserted_any = ingest_runner::run_ingest(&self.pool, &meta).await?;
-
-        // 4) Marcar status final
-        let final_status = if inserted_any { "ready" } else { "failed" };
-        let pool = self.pool.clone();
-        pool.with_conn_async({
-            let id = dataset_id;
-            let status = final_status.to_string();
-            move |conn| ingest_sql::mark_dataset_status(conn, id, &status)
-        })
-        .await?;
-
-        Ok(())
+        match ingest_runner::run_ingest(&self.pool, &meta, &progress_handle).await {
+            Ok(ingest_runner::IngestOutcome::Completed { inserted_any }) => {
+                let final_status = if inserted_any {
+                    DatasetStatus::Ready
+                } else {
+                    DatasetStatus::Failed
+                };
+                let message = if inserted_any {
+                    Some("Dataset ready".to_string())
+                } else {
+                    progress_handle
+                        .append_log("ingestion finished without inserting rows".to_string());
+                    Some("No rows ingested".to_string())
+                };
+                self.persist_status(dataset_id, final_status).await?;
+                progress_handle.set_status(final_status, message);
+                Ok(())
+            }
+            Ok(ingest_runner::IngestOutcome::Canceled) => {
+                self.persist_status(dataset_id, DatasetStatus::Canceled)
+                    .await?;
+                progress_handle.set_status(
+                    DatasetStatus::Canceled,
+                    Some("Ingestion canceled".to_string()),
+                );
+                Ok(())
+            }
+            Err(err) => {
+                let msg = err.to_string();
+                self.persist_status(dataset_id, DatasetStatus::Failed)
+                    .await?;
+                progress_handle.append_log(format!("ingestion failed: {msg}"));
+                progress_handle.set_status(DatasetStatus::Failed, Some(msg));
+                Err(err)
+            }
+        }
     }
 
     async fn list_ready_symbols(&self) -> Result<Vec<String>, AppError> {
         let pool = self.pool.clone();
         pool.with_conn_async(|conn| ingest_sql::list_ready_dataset_symbols(conn))
             .await
+    }
+
+    async fn delete_dataset(&self, dataset_id: Uuid) -> Result<(), AppError> {
+        let pool = self.pool.clone();
+        pool.with_conn_async(move |conn| ingest_sql::delete_dataset(conn, dataset_id))
+            .await?;
+        self.progress.clear(dataset_id);
+        Ok(())
+    }
+
+    async fn update_dataset_status(
+        &self,
+        dataset_id: Uuid,
+        status: DatasetStatus,
+    ) -> Result<(), AppError> {
+        self.persist_status(dataset_id, status).await
     }
 
     async fn list_ready_intervals(&self, symbol: &str) -> Result<Vec<String>, AppError> {

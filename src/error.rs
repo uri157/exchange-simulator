@@ -3,7 +3,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
-    use thiserror::Error;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AppError {
