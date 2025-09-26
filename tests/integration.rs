@@ -11,7 +11,7 @@ use tokio::time::{sleep, timeout};
 use uuid::Uuid;
 
 use exchange_simulator::domain::{
-    models::{DatasetMetadata, OrderSide, OrderStatus, OrderType},
+    models::{dataset_status::DatasetStatus, DatasetMetadata, OrderSide, OrderStatus, OrderType},
     traits::{AccountsRepo, MarketIngestor, MarketStore, OrdersRepo, ReplayEngine, SessionsRepo},
     value_objects::{Interval, Quantity, Speed, TimestampMs},
 };
@@ -64,14 +64,18 @@ impl MarketIngestor for TestIngestRepo {
             ));
         }
 
+        let now = Utc::now().timestamp_millis();
         let meta = DatasetMetadata {
             id: Uuid::new_v4(),
             symbol: symbol.to_string(),
             interval: interval.to_string(),
             start_time,
             end_time,
-            status: "registered".to_string(),
-            created_at: Utc::now().timestamp_millis(),
+            status: DatasetStatus::Registered,
+            progress: 0,
+            last_message: None,
+            created_at: now,
+            updated_at: now,
         };
 
         {
@@ -93,6 +97,46 @@ impl MarketIngestor for TestIngestRepo {
     async fn list_datasets(&self) -> Result<Vec<DatasetMetadata>, AppError> {
         let guard = self.datasets.lock().unwrap();
         Ok(guard.values().cloned().collect())
+    }
+
+    async fn get_dataset(&self, dataset_id: Uuid) -> Result<DatasetMetadata, AppError> {
+        let guard = self.datasets.lock().unwrap();
+        guard
+            .get(&dataset_id)
+            .cloned()
+            .ok_or_else(|| AppError::NotFound(format!("dataset {dataset_id} not found")))
+    }
+
+    async fn delete_dataset(&self, dataset_id: Uuid) -> Result<(), AppError> {
+        {
+            let mut guard = self.datasets.lock().unwrap();
+            guard.remove(&dataset_id);
+        }
+        let pool = self.pool.clone();
+        pool
+            .with_conn_async(move |conn| ingest_sql::delete_dataset(conn, dataset_id))
+            .await?;
+        Ok(())
+    }
+
+    async fn update_dataset_status(
+        &self,
+        dataset_id: Uuid,
+        status: DatasetStatus,
+    ) -> Result<(), AppError> {
+        {
+            let mut guard = self.datasets.lock().unwrap();
+            if let Some(meta) = guard.get_mut(&dataset_id) {
+                meta.status = status;
+                meta.updated_at = Utc::now().timestamp_millis();
+            }
+        }
+        let pool = self.pool.clone();
+        let status_str = status.as_storage_str().to_string();
+        pool
+            .with_conn_async(move |conn| ingest_sql::mark_dataset_status(conn, dataset_id, &status_str))
+            .await?;
+        Ok(())
     }
 
     async fn ingest_dataset(&self, dataset_id: Uuid) -> Result<(), AppError> {
@@ -136,14 +180,21 @@ impl MarketIngestor for TestIngestRepo {
         pool.with_conn_async(move |conn| {
             ingest_sql::insert_symbols_if_needed(conn, &symbol)?;
             ingest_sql::insert_klines_chunk(conn, &symbol, &interval, &rows)?;
-            ingest_sql::mark_dataset_status(conn, dataset_id, "ready")?;
+            ingest_sql::mark_dataset_status(
+                conn,
+                dataset_id,
+                DatasetStatus::Ready.as_storage_str(),
+            )?;
             Ok::<_, AppError>(())
         })
         .await?;
 
         let mut guard = self.datasets.lock().unwrap();
         if let Some(entry) = guard.get_mut(&dataset_id) {
-            entry.status = "ready".to_string();
+            entry.status = DatasetStatus::Ready;
+            entry.progress = 100;
+            entry.last_message = Some("Dataset ready".to_string());
+            entry.updated_at = Utc::now().timestamp_millis();
         }
 
         Ok(())
@@ -153,7 +204,7 @@ impl MarketIngestor for TestIngestRepo {
         let guard = self.datasets.lock().unwrap();
         let symbols: HashSet<String> = guard
             .values()
-            .filter(|meta| meta.status == "ready")
+            .filter(|meta| meta.status == DatasetStatus::Ready)
             .map(|meta| meta.symbol.clone())
             .collect();
         Ok(symbols.into_iter().collect())
@@ -163,7 +214,7 @@ impl MarketIngestor for TestIngestRepo {
         let guard = self.datasets.lock().unwrap();
         let intervals: HashSet<String> = guard
             .values()
-            .filter(|meta| meta.status == "ready" && meta.symbol == symbol)
+            .filter(|meta| meta.status == DatasetStatus::Ready && meta.symbol == symbol)
             .map(|meta| meta.interval.clone())
             .collect();
         Ok(intervals.into_iter().collect())

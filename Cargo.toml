@@ -7,6 +7,7 @@ edition = "2021"
 # Axum 0.6 (alineado con hyper 0.14)
 axum = { version = "=0.6.20", features = ["macros", "ws"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
+futures-core = "0.3"
 
 # tower-http 0.4 (compat axum 0.6)
 tower = "0.4"

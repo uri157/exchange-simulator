@@ -35,7 +35,14 @@ pub trait MarketIngestor: Send + Sync {
         end_time: i64,
     ) -> Result<DatasetMetadata, AppError>;
     async fn list_datasets(&self) -> Result<Vec<DatasetMetadata>, AppError>;
+    async fn get_dataset(&self, dataset_id: Uuid) -> Result<DatasetMetadata, AppError>;
     async fn ingest_dataset(&self, dataset_id: Uuid) -> Result<(), AppError>;
+    async fn delete_dataset(&self, dataset_id: Uuid) -> Result<(), AppError>;
+    async fn update_dataset_status(
+        &self,
+        dataset_id: Uuid,
+        status: crate::domain::models::dataset_status::DatasetStatus,
+    ) -> Result<(), AppError>;
     async fn list_ready_symbols(&self) -> Result<Vec<String>, AppError>;
     async fn list_ready_intervals(&self, symbol: &str) -> Result<Vec<String>, AppError>;
     async fn get_range(&self, symbol: &str, interval: &str) -> Result<(i64, i64), AppError>;

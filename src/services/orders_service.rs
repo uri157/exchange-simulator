@@ -13,7 +13,7 @@ use crate::{
     error::AppError,
 };
 
-use super::{ServiceResult, account_service::AccountService, replay_service::ReplayService};
+use super::{account_service::AccountService, replay_service::ReplayService, ServiceResult};
 
 pub struct OrdersService {
     repo: Arc<dyn OrdersRepo>,

@@ -2,7 +2,10 @@ use duckdb::{params, Connection};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::{domain::models::DatasetMetadata, error::AppError};
+use crate::{
+    domain::models::{dataset_status::DatasetStatus, DatasetMetadata},
+    error::AppError,
+};
 
 fn infer_base_quote(symbol: &str) -> (String, String) {
     const COMMON_QUOTES: [&str; 5] = ["USDT", "USD", "BUSD", "BTC", "ETH"];
@@ -173,7 +176,7 @@ pub fn insert_dataset_row(conn: &Connection, meta: &DatasetMetadata) -> Result<(
             meta.interval,
             meta.start_time,
             meta.end_time,
-            meta.status,
+            meta.status.as_storage_str(),
             meta.created_at
         ],
     )
@@ -218,13 +221,85 @@ pub fn list_datasets_query(conn: &Connection) -> Result<Vec<DatasetMetadata>, Ap
                 .map_err(|e| AppError::Database(format!("column error: {e}")))?,
             status: row
                 .get::<_, String>(5)
-                .map_err(|e| AppError::Database(format!("column error: {e}")))?,
+                .map_err(|e| AppError::Database(format!("column error: {e}")))?
+                .parse::<DatasetStatus>()
+                .map_err(|e| AppError::Database(format!("status parse error: {e}")))?,
+            progress: 0,
+            last_message: None,
             created_at: row
+                .get::<_, i64>(6)
+                .map_err(|e| AppError::Database(format!("column error: {e}")))?,
+            updated_at: row
                 .get::<_, i64>(6)
                 .map_err(|e| AppError::Database(format!("column error: {e}")))?,
         });
     }
     Ok(out)
+}
+
+pub fn get_dataset(conn: &Connection, id: Uuid) -> Result<DatasetMetadata, AppError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, symbol, interval, start_time, end_time, status, created_at
+             FROM datasets
+             WHERE id = ?1",
+        )
+        .map_err(|e| AppError::Database(format!("prepare dataset failed: {e}")))?;
+    let mut rows = stmt
+        .query(params![id.to_string()])
+        .map_err(|e| AppError::Database(format!("query dataset failed: {e}")))?;
+    let row = rows
+        .next()
+        .map_err(|e| AppError::Database(format!("row iteration failed: {e}")))?
+        .ok_or_else(|| AppError::NotFound(format!("dataset {id} not found")))?;
+
+    let id_str: String = row
+        .get(0)
+        .map_err(|e| AppError::Database(format!("column error: {e}")))?;
+    let parsed_id = Uuid::parse_str(&id_str)
+        .map_err(|e| AppError::Database(format!("uuid parse error: {e}")))?;
+    Ok(DatasetMetadata {
+        id: parsed_id,
+        symbol: row
+            .get::<_, String>(1)
+            .map_err(|e| AppError::Database(format!("column error: {e}")))?,
+        interval: row
+            .get::<_, String>(2)
+            .map_err(|e| AppError::Database(format!("column error: {e}")))?,
+        start_time: row
+            .get::<_, i64>(3)
+            .map_err(|e| AppError::Database(format!("column error: {e}")))?,
+        end_time: row
+            .get::<_, i64>(4)
+            .map_err(|e| AppError::Database(format!("column error: {e}")))?,
+        status: row
+            .get::<_, String>(5)
+            .map_err(|e| AppError::Database(format!("column error: {e}")))?
+            .parse::<DatasetStatus>()
+            .map_err(|e| AppError::Database(format!("status parse error: {e}")))?,
+        progress: 0,
+        last_message: None,
+        created_at: row
+            .get::<_, i64>(6)
+            .map_err(|e| AppError::Database(format!("column error: {e}")))?,
+        updated_at: row
+            .get::<_, i64>(6)
+            .map_err(|e| AppError::Database(format!("column error: {e}")))?,
+    })
+}
+
+pub fn delete_dataset(conn: &Connection, id: Uuid) -> Result<(), AppError> {
+    conn.execute(
+        "DELETE FROM dataset_progress WHERE dataset_id = ?1",
+        params![id.to_string()],
+    )
+    .map_err(|e| AppError::Database(format!("delete dataset progress failed: {e}")))?;
+    conn.execute(
+        "DELETE FROM datasets WHERE id = ?1",
+        params![id.to_string()],
+    )
+    .map_err(|e| AppError::Database(format!("delete dataset failed: {e}")))?;
+    Ok(())
 }
 
 // =========================

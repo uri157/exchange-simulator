@@ -10,8 +10,8 @@ use crate::{domain::value_objects::Speed, error::AppError};
 #[derive(Clone, Debug)]
 pub struct AppConfig {
     pub port: u16,
-    pub duckdb_path: String,      // siempre absoluto
-    pub data_dir: String,         // puede ser relativo, solo informativo
+    pub duckdb_path: String, // siempre absoluto
+    pub data_dir: String,    // puede ser relativo, solo informativo
     pub default_speed: Speed,
     pub ws_buffer: usize,
     pub max_session_clients: usize,
