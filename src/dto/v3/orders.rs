@@ -1,20 +1,21 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum BinanceOrderSide {
     Buy,
     Sell,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum BinanceOrderType {
     Market,
     Limit,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum BinanceTimeInForce {
     Gtc,
@@ -28,7 +29,7 @@ impl BinanceTimeInForce {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum NewOrderRespType {
     Ack,
@@ -42,11 +43,13 @@ impl Default for NewOrderRespType {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BinanceNewOrderResponse {
     pub symbol: String,
+    #[schema(value_type = i64, format = Int64)]
     pub order_id: u64,
+    #[schema(value_type = i64, format = Int64)]
     pub order_list_id: i64,
     pub client_order_id: Option<String>,
     pub transact_time: i64,
@@ -71,7 +74,7 @@ pub struct BinanceNewOrderResponse {
     pub fills: Option<Vec<BinanceOrderFill>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BinanceOrderFill {
     pub price: String,
@@ -81,10 +84,11 @@ pub struct BinanceOrderFill {
     pub trade_id: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BinanceOrderDetails {
     pub symbol: String,
+    #[schema(value_type = i64, format = Int64)]
     pub order_id: u64,
     pub order_list_id: i64,
     pub client_order_id: Option<String>,

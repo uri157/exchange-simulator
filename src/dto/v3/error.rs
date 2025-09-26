@@ -1,7 +1,16 @@
 use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde::Serialize;
+#[allow(unused_imports)]
+use serde_json::json;
+use utoipa::ToSchema;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
+#[schema(
+    example = json!({
+        "code": -1102,
+        "msg": "Mandatory parameter was not sent, was empty/null, or malformed."
+    })
+)]
 pub struct BinanceErrorResponse {
     pub code: i32,
     pub msg: String,

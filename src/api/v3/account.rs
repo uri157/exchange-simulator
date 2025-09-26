@@ -9,8 +9,10 @@ use axum::{
 };
 use chrono::Utc;
 use serde::Deserialize;
-use serde_json;
+#[allow(unused_imports)]
+use serde_json::{self, json};
 use tracing::instrument;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::{
@@ -29,20 +31,45 @@ pub fn router() -> Router {
     Router::new().route("/api/v3/account", get(get_account))
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, IntoParams, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct BinanceAccountParams {
+#[into_params(parameter_in = Query, rename_all = "camelCase")]
+pub struct BinanceAccountParams {
+    /// Optional timestamp in milliseconds for Binance compatibility.
+    #[param(value_type = i64, format = Int64)]
+    #[schema(value_type = i64, format = Int64)]
     timestamp: Option<String>,
+    /// Optional recvWindow in milliseconds. Ignored if present.
+    #[param(value_type = i64, format = Int64)]
+    #[schema(value_type = i64, format = Int64)]
     recv_window: Option<String>,
+    /// Optional session identifier. If omitted, X-Session-Id header is used.
     session_id: Option<String>,
+    /// Signature parameter is accepted for compatibility but ignored.
     signature: Option<String>,
 }
 
 #[utoipa::path(
     get,
     path = "/api/v3/account",
-    params(crate::dto::account::AccountQuery),
-    responses((status = 200, body = crate::dto::account::AccountResponse))
+    params(crate::api::v3::account::BinanceAccountParams),
+    responses(
+        (status = 200, body = crate::dto::v3::account::BinanceAccountResponse),
+        (
+            status = 400,
+            body = crate::dto::v3::error::BinanceErrorResponse,
+            description = "Validation error",
+            examples((
+                "missingSession" = (value = json!({"code": -1102, "msg": "sessionId is required"}))
+            ))
+        ),
+        (
+            status = 500,
+            body = crate::dto::v3::error::BinanceErrorResponse,
+            description = "Internal error"
+        )
+    ),
+    tag = "binance-v3"
 )]
 #[instrument(skip(state, raw_query))]
 pub async fn get_account(

@@ -6,6 +6,8 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
+#[allow(unused_imports)]
+use serde_json::json;
 use tracing::instrument;
 
 use crate::{
@@ -40,8 +42,58 @@ pub fn router() -> Router {
 #[utoipa::path(
     post,
     path = "/api/v3/order",
-    request_body = crate::dto::orders::NewOrderRequest,
-    responses((status = 200, body = crate::dto::orders::NewOrderResponse))
+    request_body(
+        content = crate::api::v3::orders::types::BinanceNewOrderParams,
+        content_type = "application/x-www-form-urlencoded",
+        description = "Form parameters mirror Binance API. Parameters may also be provided via query string; when duplicated, the query value takes precedence.",
+        examples(
+            ("limit" = (value = json!({
+                "symbol": "ETHBTC",
+                "side": "BUY",
+                "type": "LIMIT",
+                "timeInForce": "GTC",
+                "quantity": "1",
+                "price": "0.01",
+                "timestamp": "1730000000000",
+                "recvWindow": "5000",
+                "sessionId": "00000000-0000-0000-0000-000000000000"
+            }))),
+            ("marketQuote" = (value = json!({
+                "symbol": "ETHBTC",
+                "side": "SELL",
+                "type": "MARKET",
+                "quoteOrderQty": "100",
+                "timestamp": "1730000000000",
+                "sessionId": "00000000-0000-0000-0000-000000000000"
+            })))
+        )
+    ),
+    params(crate::api::v3::orders::types::BinanceNewOrderParams),
+    responses(
+        (status = 200, body = crate::dto::v3::orders::BinanceNewOrderResponse),
+        (
+            status = 400,
+            description = "Validation error",
+            body = crate::dto::v3::error::BinanceErrorResponse,
+            examples((
+                "missingParameter" = (value = json!({
+                    "code": -1102,
+                    "msg": "Mandatory parameter was not sent, was empty/null, or malformed."
+                }))
+            ))
+        ),
+        (
+            status = 409,
+            description = "Order conflict",
+            body = crate::dto::v3::error::BinanceErrorResponse
+        ),
+        (
+            status = 500,
+            description = "Internal error",
+            body = crate::dto::v3::error::BinanceErrorResponse
+        )
+    ),
+    tag = "binance-v3"
 )]
 #[instrument(skip(state, body))]
 pub async fn new_order(
@@ -75,8 +127,7 @@ pub async fn new_order(
             Ok(Json(response).into_response())
         }
         NewOrderPayload::Binance(params) => {
-            match { handle_binance_new_order(&state, &headers, raw_query.as_deref(), params).await }
-            {
+            match handle_binance_new_order(&state, &headers, raw_query.as_deref(), params).await {
                 Ok(resp) => Ok(Json(resp).into_response()),
                 Err(err) => Ok(binance_error(err)),
             }
@@ -87,8 +138,38 @@ pub async fn new_order(
 #[utoipa::path(
     get,
     path = "/api/v3/order",
-    params(crate::dto::orders::QueryOrderParams),
-    responses((status = 200, body = crate::dto::orders::OrderResponse))
+    params(crate::api::v3::orders::types::BinanceQueryParams),
+    responses(
+        (status = 200, body = crate::dto::v3::orders::BinanceOrderDetails),
+        (
+            status = 400,
+            description = "Validation error",
+            body = crate::dto::v3::error::BinanceErrorResponse,
+            examples((
+                "missingParameter" = (value = json!({
+                    "code": -1102,
+                    "msg": "Mandatory parameter was not sent, was empty/null, or malformed."
+                }))
+            ))
+        ),
+        (
+            status = 404,
+            description = "Order not found",
+            body = crate::dto::v3::error::BinanceErrorResponse,
+            examples((
+                "orderNotFound" = (value = json!({
+                    "code": -2013,
+                    "msg": "Order does not exist"
+                }))
+            ))
+        ),
+        (
+            status = 500,
+            description = "Internal error",
+            body = crate::dto::v3::error::BinanceErrorResponse
+        )
+    ),
+    tag = "binance-v3"
 )]
 #[instrument(skip(state, raw_query))]
 pub async fn get_order(
@@ -128,8 +209,43 @@ pub async fn get_order(
 #[utoipa::path(
     delete,
     path = "/api/v3/order",
-    params(crate::dto::orders::CancelOrderParams),
-    responses((status = 200, body = crate::dto::orders::OrderResponse))
+    params(crate::api::v3::orders::types::BinanceQueryParams),
+    responses(
+        (status = 200, body = crate::dto::v3::orders::BinanceOrderDetails),
+        (
+            status = 400,
+            description = "Validation error",
+            body = crate::dto::v3::error::BinanceErrorResponse,
+            examples((
+                "missingParameter" = (value = json!({
+                    "code": -1102,
+                    "msg": "Mandatory parameter was not sent, was empty/null, or malformed."
+                }))
+            ))
+        ),
+        (
+            status = 404,
+            description = "Order not found",
+            body = crate::dto::v3::error::BinanceErrorResponse,
+            examples((
+                "orderNotFound" = (value = json!({
+                    "code": -2013,
+                    "msg": "Order does not exist"
+                }))
+            ))
+        ),
+        (
+            status = 409,
+            description = "Order conflict",
+            body = crate::dto::v3::error::BinanceErrorResponse
+        ),
+        (
+            status = 500,
+            description = "Internal error",
+            body = crate::dto::v3::error::BinanceErrorResponse
+        )
+    ),
+    tag = "binance-v3"
 )]
 #[instrument(skip(state, raw_query))]
 pub async fn cancel_order(
@@ -173,8 +289,30 @@ pub async fn cancel_order(
 #[utoipa::path(
     get,
     path = "/api/v3/openOrders",
-    params(crate::dto::orders::OpenOrdersParams),
-    responses((status = 200, body = Vec<crate::dto::orders::OrderResponse>))
+    params(crate::api::v3::orders::types::BinanceOpenOrdersParams),
+    responses(
+        (
+            status = 200,
+            body = Vec<crate::dto::v3::orders::BinanceOrderDetails>
+        ),
+        (
+            status = 400,
+            description = "Validation error",
+            body = crate::dto::v3::error::BinanceErrorResponse,
+            examples((
+                "missingParameter" = (value = json!({
+                    "code": -1102,
+                    "msg": "Mandatory parameter was not sent, was empty/null, or malformed."
+                }))
+            ))
+        ),
+        (
+            status = 500,
+            description = "Internal error",
+            body = crate::dto::v3::error::BinanceErrorResponse
+        )
+    ),
+    tag = "binance-v3"
 )]
 #[instrument(skip(state, raw_query))]
 pub async fn open_orders(
@@ -209,8 +347,30 @@ pub async fn open_orders(
 #[utoipa::path(
     get,
     path = "/api/v3/myTrades",
-    params(crate::dto::orders::MyTradesParams),
-    responses((status = 200, body = Vec<crate::dto::orders::FillResponse>))
+    params(crate::api::v3::orders::types::BinanceMyTradesParams),
+    responses(
+        (
+            status = 200,
+            body = Vec<crate::dto::v3::trades::BinanceTradeResponse>
+        ),
+        (
+            status = 400,
+            description = "Validation error",
+            body = crate::dto::v3::error::BinanceErrorResponse,
+            examples((
+                "missingParameter" = (value = json!({
+                    "code": -1102,
+                    "msg": "Mandatory parameter was not sent, was empty/null, or malformed."
+                }))
+            ))
+        ),
+        (
+            status = 500,
+            description = "Internal error",
+            body = crate::dto::v3::error::BinanceErrorResponse
+        )
+    ),
+    tag = "binance-v3"
 )]
 #[instrument(skip(state, raw_query))]
 pub async fn my_trades(
