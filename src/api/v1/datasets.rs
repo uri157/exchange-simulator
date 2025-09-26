@@ -1,9 +1,10 @@
 use axum::{
-    extract::Path,
+    extract::{Path, Query},
     http::StatusCode,
     routing::{get, post},
     Extension, Json, Router,
 };
+use std::collections::HashMap;
 use tracing::{error, info, instrument};
 use uuid::Uuid;
 
@@ -22,6 +23,10 @@ pub fn router() -> Router {
             post(register_dataset).get(list_datasets),
         )
         .route("/api/v1/datasets/:id/ingest", post(ingest_dataset))
+        .route(
+            "/api/v1/datasets/:id",
+            get(get_dataset).delete(delete_dataset),
+        )
         // Nuevos endpoints para consultar lo disponible en la BD (datasets/klines)
         .route("/api/v1/datasets/symbols", get(get_ready_symbols))
         .route(
@@ -32,6 +37,60 @@ pub fn router() -> Router {
             "/api/v1/datasets/:symbol/:interval/range",
             get(get_symbol_interval_range),
         )
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/datasets/{id}",
+    params(("id" = Uuid, Path, description = "Dataset ID")),
+    responses(
+        (status = 200, body = DatasetResponse, description = "Dataset detail"),
+        (status = 404, description = "Dataset not found"),
+    )
+)]
+#[instrument(skip(state), fields(dataset_id = %id))]
+pub async fn get_dataset(
+    Extension(state): Extension<AppState>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<DatasetResponse>> {
+    let dataset = state.ingest_service.get_dataset(id).await?;
+    Ok(Json(dataset.into()))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/datasets/{id}",
+    params(
+        ("id" = Uuid, Path, description = "Dataset ID"),
+        (
+            "force" = bool,
+            Query,
+            description = "Force delete if dataset is ingesting"
+        )
+    ),
+    responses(
+        (status = 204, description = "Dataset deleted"),
+        (status = 404, description = "Dataset not found"),
+        (
+            status = 409,
+            description = "Dataset is ingesting. Retry with force=true to delete",
+        )
+    )
+)]
+#[instrument(skip(state, query), fields(dataset_id = %id))]
+pub async fn delete_dataset(
+    Extension(state): Extension<AppState>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<HashMap<String, String>>,
+) -> ApiResult<StatusCode> {
+    let force = query
+        .get("force")
+        .map(|value| value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    state.ingest_service.delete_dataset(id, force).await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(

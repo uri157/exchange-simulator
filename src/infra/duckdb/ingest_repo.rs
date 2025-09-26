@@ -112,6 +112,18 @@ impl MarketIngestor for DuckDbIngestRepo {
         Ok(())
     }
 
+    async fn get_dataset(&self, dataset_id: Uuid) -> Result<Option<DatasetMetadata>, AppError> {
+        let pool = self.pool.clone();
+        pool.with_conn_async(move |conn| ingest_sql::get_dataset_by_id(conn, dataset_id))
+            .await
+    }
+
+    async fn delete_dataset(&self, dataset_id: Uuid) -> Result<(), AppError> {
+        let pool = self.pool.clone();
+        pool.with_conn_async(move |conn| ingest_sql::delete_dataset(conn, dataset_id))
+            .await
+    }
+
     async fn list_ready_symbols(&self) -> Result<Vec<String>, AppError> {
         let pool = self.pool.clone();
         pool.with_conn_async(|conn| ingest_sql::list_ready_dataset_symbols(conn))
