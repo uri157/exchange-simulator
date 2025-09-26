@@ -1,11 +1,14 @@
 use serde::Serialize;
+use utoipa::ToSchema;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BinanceTradeResponse {
     pub symbol: String,
     pub id: u64,
+    #[schema(value_type = i64, format = Int64)]
     pub order_id: u64,
+    #[schema(value_type = i64, format = Int64)]
     pub order_list_id: i64,
     pub price: String,
     pub qty: String,
