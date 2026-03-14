@@ -22,7 +22,7 @@ Features:
 - DuckDB storage for datasets
 
 Repository:
-https://github.com/tuusuario/exchange-simulator-backend
+https://github.com/uri157/exchange-simulator-backend
 
 ---
 
@@ -36,7 +36,7 @@ Features:
 - Debug information for WebSocket connections
 
 Repository:
-https://github.com/tuusuario/exchange-simulator-frontend
+https://github.com/uri157/exchange-simulator-frontend
 
 ---
 
