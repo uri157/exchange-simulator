@@ -1,71 +1,89 @@
 # Exchange Simulator
 
-A deterministic **Binance-like exchange simulator** designed for strategy backtesting using historical market data.
+Exchange Simulator is a deterministic, Binance-inspired trading environment for developing and validating bots against historical market data before touching real capital.
 
-The project allows trading bots to interact with a local simulated exchange that exposes a **Binance-inspired REST API and WebSocket streams**, enabling reproducible testing without connecting to real exchanges.
-
----
-
-## Architecture
-
-The system is composed of two main components:
-
-### Backend
-Rust service that simulates an exchange environment.
-
-Features:
-- REST API compatible with common Binance endpoints
-- WebSocket kline streaming
-- Historical market replay engine
-- Session-based simulation
-- Deterministic order execution
-- DuckDB storage for datasets
-
-Repository:
-https://github.com/uri157/exchange-simulator-backend
+It is designed as an engineering platform, not just a chart replay tool: dataset ingestion, session orchestration, exchange-like order endpoints, bot identity, run tracking, and UI control surfaces are all part of the same system.
 
 ---
 
-### Frontend
-Next.js application used to visualize sessions and interact with the simulator.
+## System Purpose
 
-Features:
-- Session management UI
-- WebSocket live candle streaming
-- Replay controls (start, pause, resume, seek)
-- Debug information for WebSocket connections
+Most strategy failures appear in integration boundaries, not in indicator math:
 
-Repository:
-https://github.com/uri157/exchange-simulator-frontend
+- replay timing drift
+- order handling under accelerated clocks
+- bot/runtime disconnects
+- inconsistent analytics across runs
 
----
-
-## Typical Use Case
-
-1. Load historical market data into DuckDB
-2. Start the exchange simulator backend
-3. Create a replay session
-4. Connect a trading bot or the frontend UI
-5. Replay historical markets deterministically
-
-This enables testing strategies over years of data without interacting with real exchanges.
+Exchange Simulator focuses on those boundaries with reproducible, session-scoped execution and explicit run history.
 
 ---
 
-## Project Goals
+## Repositories
 
-- Deterministic trading simulation
-- Fast historical data replay
-- Exchange-like environment for bot testing
-- Simple architecture that can be extended with indicators, metrics and persistence
+- **Engine (Rust API + replay core)**  
+  https://github.com/uri157/exchange-simulator-backend
+- **Control Surface (Next.js UI)**  
+  https://github.com/uri157/exchange-simulator-frontend
+
+This repository provides the high-level project overview.
 
 ---
 
-## Roadmap
+## Conceptual Model
 
-- Persistent accounts and orders
-- Metrics (Prometheus / OpenTelemetry)
-- Strategy benchmarking tools
-- More realistic exchange mechanics
+- **Dataset**: historical market source for a symbol (ingested as aggTrade-first data).
+- **Session**: deterministic replay envelope (symbols, interval, speed, fee model, time bounds).
+- **Run**: one execution lifecycle of a session (`start -> stop/completion`).
+- **Bot**: identity + credentials that can bind to sessions and produce run statistics.
+- **Live Runtime Telemetry**: operational health signal emitted by running bots.
 
+The system intentionally separates:
+
+- **Simulation Plane** (deterministic backtesting and replay)
+- **Live Operations Plane** (runtime health and bot telemetry)
+
+---
+
+## Architecture at a Glance
+
+1. **Data Plane**
+   - Historical aggTrades are ingested into TimescaleDB/PostgreSQL.
+   - Klines are derived on demand and during replay from aggTrades.
+2. **Execution Plane**
+   - Replay engine advances simulated time per session.
+   - Session lifecycle controls (`start`, `pause`, `resume`, `stop`) drive run creation/finalization.
+3. **Trading Plane**
+   - Binance-like REST endpoints for account/orders/trades.
+   - Deterministic fill rules with session-scoped fees.
+4. **Control Plane**
+   - Bot management, session orchestration, and run analytics.
+5. **Telemetry Plane**
+   - Runtime telemetry ingestion and fleet snapshots for live monitoring.
+
+---
+
+## Compatibility Strategy
+
+The project follows a pragmatic Binance-compatibility approach:
+
+- familiar endpoint shape for bot integration
+- deterministic behavior over exchange-perfect microstructure
+- explicit room for future realism upgrades (ticks, partial fills, richer matching)
+
+Goal: reduce integration friction while keeping simulation semantics controlled and reproducible.
+
+---
+
+## Current Scope
+
+Implemented and production-oriented:
+
+- aggTrade-first storage model on TimescaleDB
+- session-centric run lifecycle
+- bot binding and run-linked trade history
+- live telemetry ingestion and fleet snapshots
+- modern UI for datasets, sessions, bots, lab analytics, and live views
+
+Planned iterations focus on deeper exchange realism and expanded bot operations tooling.
 
